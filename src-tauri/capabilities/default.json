@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimum surface the Jotter webview needs: drag the ball, pick an export path, and talk to the app's own commands. Everything else (clipboard, window geometry, tray) is driven from Rust and therefore needs no webview permission.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "dialog:allow-save"
+  ]
+}
