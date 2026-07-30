@@ -85,6 +85,7 @@ ui/
 - **拖动与点击不冲突** — 指针位移超过 4px 才交给系统开始拖窗口，否则算点击。直接调 `startDragging` 会让系统拖拽循环吞掉所有点击。
 - **失焦收起不会自己弹回** — 点小猫时面板先失焦收起，紧接着的点击又会要求打开。窗口事件与 IPC 之间有 320ms 的守卫窗口把这次重开吞掉。
 - **导出时面板不消失** — 原生保存对话框会抢焦点，而失焦本来要触发自动收起。导出前后用 `suspend_auto_collapse` 括起来。
+- **打开就能敲** — 本子窗口是隐藏而非销毁，所以挂载时那一次 `focus()` 落在还不可聚焦的 webview 上被拒，之后再也不会挂载第二次。光标改由 `panel-state` 打开事件取回，窗口重新获得焦点时再补一次；正在改错字时不抢。
 - **数据永不静默丢失** — JSON 解析失败时，原文件改名为 `workspace.corrupt-<时间戳>` 保留，而不是覆盖。
 
 ## 构建
@@ -138,7 +139,7 @@ powershell -ExecutionPolicy Bypass -File scripts\acceptance.ps1 -Exe .\Jotter.ex
 |---|---|
 | CDP（`--remote-debugging-port`） | 两个 webview 都加载自内嵌 bundle（`tauri.localhost`）、都挂载出了内容、都没有前端异常 |
 | Win32 `EnumWindows` + DPI 感知 | 小猫窗口是 104 逻辑像素、本子是工作区每轴 1/3（面积 1/9）、置顶、透明、不越界 |
-| CDP `Input.dispatchMouseEvent` | 真实指针按下/抬起（而非 `.click()`，那会绕过点击与拖动的判定）→ 本子在旁边打开，再点一次收起 |
+| CDP `Input.dispatchMouseEvent` | 真实指针按下/抬起（而非 `.click()`，那会绕过点击与拖动的判定）→ 本子在旁边打开、光标落在录入行（首开与重开各断言一次）、再点一次收起 |
 | `SetWindowPos` + workspace.json | 移动小猫，本子跟随；新位置落盘 |
 | 跨窗口事件 | 在本子里加一条，小猫角标随之变化（store hook → 事件 → 另一个 webview 的 DOM），随后自动清理 |
 | 屏幕截取像素差 | 遮/显同一矩形对比：透明置顶窗口即使什么都没画，对所有 API 也仍然"健康" |

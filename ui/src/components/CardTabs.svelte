@@ -1,12 +1,27 @@
 <!-- Horizontal card switcher. Click to switch, double-click to rename, and a
      hover-revealed cross to delete once more than one card exists. -->
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
   import Icon from './Icon.svelte';
   import { workspace } from '../lib/store.svelte';
 
   let editingId = $state<string | null>(null);
   let confirmingId = $state<string | null>(null);
   let strip = $state<HTMLDivElement | null>(null);
+
+  // Putting the notebook away hides its window without destroying it, so both of
+  // these would otherwise still be set on reopen — and a delete confirmation
+  // that outlives the session it was armed in means the next click on that cross
+  // removes a card without asking.
+  onMount(() => {
+    let off: (() => void) | undefined;
+    void listen('panel-state', () => {
+      confirmingId = null;
+      editingId = null;
+    }).then((f) => (off = f));
+    return () => off?.();
+  });
 
   function startRename(id: string) {
     confirmingId = null;

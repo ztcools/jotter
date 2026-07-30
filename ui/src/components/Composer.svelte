@@ -1,11 +1,43 @@
 <!-- Capture line. Enter commits and keeps focus, so a burst of findings can be
      typed without ever reaching for the mouse. -->
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
   import Icon from './Icon.svelte';
   import { workspace } from '../lib/store.svelte';
 
   let value = $state('');
   let field = $state<HTMLInputElement | null>(null);
+
+  /** True while the caret is in some other field — an item being corrected. */
+  function editingElsewhere() {
+    const el = document.activeElement;
+    return el !== null && el !== field && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+  }
+
+  /** Puts the caret on the capture line.
+   *
+   * Focusing once at mount is not enough. The notebook window is created hidden
+   * and from then on only hidden again, never destroyed, so nothing here
+   * remounts on reopen — and the mount-time focus was refused anyway, because a
+   * hidden webview cannot take it. The two together left every keystroke after
+   * opening the notebook going to `body`. */
+  function claimCaret() {
+    if (!field || editingElsewhere()) return;
+    field.focus();
+    // The webview is granted focus a beat after the window is shown, so even a
+    // well-timed first attempt can still be refused.
+    if (document.activeElement !== field) setTimeout(() => field?.focus(), 140);
+  }
+
+  onMount(() => {
+    claimCaret();
+    let off: (() => void) | undefined;
+    void listen<boolean>('panel-state', (event) => {
+      if (event.payload) claimCaret();
+    }).then((f) => (off = f));
+    return () => off?.();
+  });
 
   // Refocus when the active card changes, so switching cards leaves the caret
   // ready in the new one.
@@ -32,6 +64,10 @@
     }
   }
 </script>
+
+<!-- Coming back to a pinned notebook (Alt-Tab, or a click on its chrome) should
+     also leave the caret ready, not on `body`. -->
+<svelte:window onfocus={claimCaret} />
 
 <div class="composer" class:filled={value.length > 0}>
   <input

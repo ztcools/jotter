@@ -373,6 +373,9 @@ function Test-Anchored($ballWin, $panelWin, $label) {
         "$label — notebook is centred on the mascot (or clamped to the work area)"
 }
 
+$caretOnCaptureLine =
+    'JSON.stringify(document.activeElement === document.querySelector(".composer input"))'
+
 Info "clicking the mascot…"
 Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2))
 Start-Sleep -Milliseconds 900
@@ -384,6 +387,13 @@ if ($panel.Visible) {
     Test-Anchored (Get-Ball $wins) $panel 'on open'
     Test-Composites $panel 'notebook'
 }
+
+# An open notebook you have to click into before you can type is not the thing
+# that was asked for, and no amount of reading the source settles which way this
+# goes: the window is created hidden, a hidden webview refuses focus, and the
+# document never remounts afterwards. Ask the running app.
+Check ((Invoke-Js $panelWs $caretOnCaptureLine) -eq 'true') `
+    "the caret is on the capture line when the notebook opens"
 
 # Moving the mascot must drag the notebook along. Done with SetWindowPos rather
 # than synthetic mouse input: `startDragging` hands the gesture to the OS drag
@@ -457,6 +467,17 @@ if (Test-Path $workspacePath) {
 }
 
 Test-Composites (Get-Ball $wins) 'mascot'
+
+# Reopening is the case that regresses: the notebook was hidden rather than
+# destroyed, so a fix that only runs when the document mounts works exactly once.
+Info "reopening the notebook…"
+Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2))
+Start-Sleep -Milliseconds 1300
+Check ((Get-Panel (Get-AppWindows $proc.Id)).Visible) "the notebook reopens"
+Check ((Invoke-Js $panelWs $caretOnCaptureLine) -eq 'true') `
+    "the caret is on the capture line again after a reopen"
+Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2))
+Start-Sleep -Milliseconds 700
 
 # ----------------------------------------------------------------------- logs
 if (Test-Path $logPath) {
