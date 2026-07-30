@@ -51,6 +51,12 @@ const EDGE: f64 = 10.0;
 /// that same interaction. See [`Ui::swallow_reopen`].
 const REOPEN_GUARD: Duration = Duration::from_millis(320);
 
+/// How long to let focus settle before reading it back. Long enough for Windows
+/// to finish handing activation to whichever window is really getting it, short
+/// enough that clicking away still feels immediate.
+/// See [`close_on_blur_when_settled`].
+const BLUR_SETTLE: Duration = Duration::from_millis(180);
+
 /// Session-only window state. Deliberately not part of `Workspace`: the widget
 /// always starts with the panel closed, so none of this is user data.
 #[derive(Default)]
@@ -277,6 +283,43 @@ pub fn toggle_panel<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
 pub fn close_on_blur<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
     app.state::<Ui>().note_blur_close();
     set_panel_open(app, false)
+}
+
+/// Decides, a moment after the notebook lost focus, whether that meant "the user
+/// went somewhere else".
+///
+/// Reacting to the raw event closed the notebook during perfectly ordinary
+/// gestures. Dragging the mascot activates the mascot's window; dragging the
+/// notebook by its header enters the OS move loop, which bounces activation on
+/// the way in. Both blur the notebook, and neither is a reason to put it away.
+///
+/// The check has to be deferred rather than made inline, because Windows
+/// delivers the loss of focus before the gain: at the instant this event arrives
+/// nothing is focused yet, so there is nothing to compare against. A moment
+/// later focus has settled, and "one of ours has it" is a plain question with a
+/// plain answer — no gesture flags to keep in sync, and it holds for any future
+/// window of ours.
+pub fn close_on_blur_when_settled<R: Runtime>(app: &AppHandle<R>) {
+    let app = app.clone();
+    // A thread rather than a timer: blur is user-paced, and this one sleeps once
+    // and exits. Tauri's window methods are callable from any thread.
+    std::thread::spawn(move || {
+        std::thread::sleep(BLUR_SETTLE);
+        let ui = app.state::<Ui>();
+        if !ui.is_open() || ui.collapse_suspended() || app.state::<Store>().read(|ws| ws.pinned) {
+            return;
+        }
+        if has_focus(ball_window(&app)) || has_focus(panel_window(&app)) {
+            return;
+        }
+        if let Err(err) = close_on_blur(&app) {
+            log::error!("close on blur failed: {err}");
+        }
+    });
+}
+
+fn has_focus<R: Runtime>(window: Result<WebviewWindow<R>>) -> bool {
+    window.is_ok_and(|w| w.is_focused().unwrap_or(false))
 }
 
 fn persist_position(store: &Store, pos: PhysicalPosition<i32>) -> Result<()> {

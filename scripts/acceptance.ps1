@@ -60,6 +60,7 @@ if (-not ('W32' -as [type])) {
 [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int t, uint flags);
 [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
 [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr ctx);
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassNameW(IntPtr h, System.Text.StringBuilder s, int max);
 public delegate bool EnumProc(IntPtr h, IntPtr p);
 '@
@@ -87,6 +88,12 @@ function Near($a, $b, $tol) { return ([math]::Abs($a - $b) -le $tol) }
 
 $GWL_EXSTYLE = -20; $WS_EX_TOPMOST = 0x8; $WS_EX_LAYERED = 0x80000
 $SW_HIDE = 0; $SW_SHOWNA = 8
+# How far a corner pixel may move, per channel, and still count as showing the
+# desktop through. Headroom, not a measurement: a truly clear corner reads 0 here,
+# and the slack is for the panel's drop shadow, which paints into that same
+# transparent margin and could tint a corner without making it opaque. Paper over
+# any backdrop that is not itself paper-coloured moves a corner by far more.
+$CORNER_TOLERANCE = 48
 $SWP_NOSIZE = 0x1; $SWP_NOZORDER = 0x4; $SWP_NOACTIVATE = 0x10
 
 function Get-AppWindows([int]$ProcId) {
@@ -156,21 +163,45 @@ function Test-Composites($win, $label) {
     # `pnpm dev` + preview.html for that.
     Check ($diff -gt 0) "$label composites real pixels ($diff/$($shown.Length) differ, $pct%)"
 
-    # …and the corners must be *un*changed, because a rounded transparent widget
-    # shows the desktop through them. This is the only check that distinguishes the
-    # intended surface from an opaque rectangle of the right size: window styles do
-    # not say — WebView2 transparency is composited, so WS_EX_LAYERED is not set.
+    # …and at the corners the desktop must still be recognisable, because a rounded
+    # transparent widget shows through them. This is the only check that
+    # distinguishes the intended surface from an opaque rectangle of the right size:
+    # window styles do not say — WebView2 transparency is composited, so
+    # WS_EX_LAYERED is not set.
+    #
+    # Not equality, which this asserted at first and which flaked: a pixel of
+    # desktop can change on its own between the two captures — anything animating
+    # behind the widget — and that read as "the corner is opaque". Those pixels are
+    # now found by a second reading and dropped, since they can say nothing either
+    # way. What is left is judged by distance rather than equality, for the panel's
+    # drop shadow, which paints into this same transparent margin.
+    #
     # Every arithmetic term is parenthesised because `,` binds tighter than `-` in
     # PowerShell: `@($win.W - 2, 1)` means `$win.W - (2, 1)`.
     $corners = @(@(1, 1), @(($win.W - 2), 1), @(1, ($win.H - 2)), @(($win.W - 2), ($win.H - 2)))
     $clear = 0
+    $judged = 0
+    $deltas = @()
     foreach ($c in $corners) {
         $i = $c[1] * $win.W + $c[0]
-        if ($shown[$i] -eq $hidden[$i]) { $clear++ }
+        # Re-read this one pixel while the window is still hidden: if the desktop
+        # changed it by itself, it can say nothing about our window.
+        $again = (Get-RectPixels ($win.X + $c[0]) ($win.Y + $c[1]) 1 1)[0]
+        if ($again -ne $hidden[$i]) { $deltas += 'unstable'; continue }
+        $judged++
+        $a = [System.Drawing.Color]::FromArgb($shown[$i])
+        $b = [System.Drawing.Color]::FromArgb($hidden[$i])
+        $delta = [math]::Max([math]::Abs($a.R - $b.R),
+            [math]::Max([math]::Abs($a.G - $b.G), [math]::Abs($a.B - $b.B)))
+        $deltas += $delta
+        if ($delta -le $CORNER_TOLERANCE) { $clear++ }
     }
-    # Three of four, not four: a corner that happens to sit over something the
-    # desktop redrew on its own would fail an all-four rule for no good reason.
-    Check ($clear -ge 3) "$label has transparent corners ($clear/4 show the desktop through)"
+    Info "$label corner deltas: $($deltas -join ', ') (tolerance $CORNER_TOLERANCE)"
+    # All but one of the corners that could be read, and at least two read: one
+    # corner may sit over something that moved for its own reasons, but a window
+    # that is opaque is opaque at every corner.
+    Check ($judged -ge 2 -and $clear -ge [math]::Max(2, ($judged - 1))) `
+        "$label has transparent corners ($clear/$judged readable corners show the desktop through)"
 }
 
 # ------------------------------------------------------------------- CDP client
@@ -224,6 +255,23 @@ function Send-Click($Ws, [int]$X, [int]$Y) {
             buttons = $(if ($t -eq 'mousePressed') { 1 } else { 0 })
         } | Out-Null
     }
+}
+
+# A press that travels far enough to become a window drag. The intermediate moves
+# are the point: the threshold that separates a drag from a click only ever sees
+# `pointermove`, so a press-then-release would test the other branch.
+function Send-Drag($Ws, [int]$X, [int]$Y, [int]$By) {
+    Invoke-Cdp $Ws 'Input.dispatchMouseEvent' @{
+        type = 'mousePressed'; x = $X; y = $Y; button = 'left'; clickCount = 1; buttons = 1
+    } | Out-Null
+    foreach ($step in 3, 9, 18, $By) {
+        Invoke-Cdp $Ws 'Input.dispatchMouseEvent' @{
+            type = 'mouseMoved'; x = ($X + $step); y = ($Y + $step); button = 'left'; buttons = 1
+        } | Out-Null
+    }
+    Invoke-Cdp $Ws 'Input.dispatchMouseEvent' @{
+        type = 'mouseReleased'; x = ($X + $By); y = ($Y + $By); button = 'left'; clickCount = 1; buttons = 0
+    } | Out-Null
 }
 
 # ------------------------------------------------------------------------- run
@@ -476,8 +524,57 @@ Start-Sleep -Milliseconds 1300
 Check ((Get-Panel (Get-AppWindows $proc.Id)).Visible) "the notebook reopens"
 Check ((Invoke-Js $panelWs $caretOnCaptureLine) -eq 'true') `
     "the caret is on the capture line again after a reopen"
-Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2))
-Start-Sleep -Milliseconds 700
+
+# ------------------------------------------------- gestures that must NOT close
+# Dragging the mascot activates the mascot's window, which blurs the notebook.
+# Reacting to that blur closed the notebook mid-drag: the card vanished the moment
+# the cat started moving.
+$centreX = [int]($ball.W / $scale / 2)
+$centreY = [int]($ball.H / $scale / 2)
+Info "dragging the mascot with the notebook open…"
+Send-Drag $ballWs $centreX $centreY 26
+Start-Sleep -Milliseconds 1100
+Check ((Get-Panel (Get-AppWindows $proc.Id)).Visible) `
+    "dragging the mascot leaves the notebook open"
+
+# A press on the notebook's own drag handle must not close it either. Synthetic
+# input cannot reproduce the whole failure — the OS move loop needs a physically
+# held button, and it is the activation churn of entering that loop that blurred
+# the window — so this asserts the half that is reachable: nothing in the document
+# treats a press on the header or the spine as "close".
+Send-Click $panelWs 400 12
+Start-Sleep -Milliseconds 600
+Check ((Get-Panel (Get-AppWindows $proc.Id)).Visible) "a press on the header leaves the notebook open"
+Send-Click $panelWs 11 200
+Start-Sleep -Milliseconds 600
+Check ((Get-Panel (Get-AppWindows $proc.Id)).Visible) "a press on the spine leaves the notebook open"
+
+# ------------------------------------------------------ …and one that still must
+# The other half of the same change: a blur that really is the user going
+# elsewhere has to keep putting the notebook away, or the widget starts sitting on
+# top of the very UI being reviewed.
+$away = Start-Process cmd -ArgumentList '/k', 'title jotter-focus-steal' -PassThru -ErrorAction SilentlyContinue
+if ($away) {
+    Start-Sleep -Milliseconds 1000
+    try { (New-Object -ComObject WScript.Shell).AppActivate($away.Id) | Out-Null } catch { }
+    Start-Sleep -Milliseconds 1300
+    # Whether anything actually took the foreground is a fact to read, not to
+    # assume: a session that grants it to nobody would otherwise fail this as if
+    # the app were broken.
+    $fgPid = 0
+    [W32]::GetWindowThreadProcessId([W32]::GetForegroundWindow(), [ref]$fgPid) | Out-Null
+    if ($fgPid -ne 0 -and $fgPid -ne $proc.Id) {
+        Check (-not (Get-Panel (Get-AppWindows $proc.Id)).Visible) `
+            "focusing another app still puts the notebook away"
+    }
+    else {
+        Info "skipped click-away check: the foreground never left the widget (pid $fgPid)"
+    }
+    Stop-Process -Id $away.Id -Force -ErrorAction SilentlyContinue
+}
+else {
+    Info "skipped click-away check: could not start a second app"
+}
 
 # ----------------------------------------------------------------------- logs
 if (Test-Path $logPath) {

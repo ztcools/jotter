@@ -13,14 +13,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
   import Cat from './components/Cat.svelte';
+  import { pressToDrag } from './lib/drag';
   import * as ipc from './lib/ipc';
-
-  /** Pointer travel, in CSS pixels, before a press counts as a drag rather than
-   * a click. Without it `startDragging` would swallow every click, because the
-   * OS drag loop takes the pointer away before `pointerup` arrives. */
-  const DRAG_THRESHOLD = 4;
 
   let pressed = $state(false);
   let panelOpen = $state(false);
@@ -59,39 +54,14 @@
     if (event.button !== 0) return;
     event.preventDefault();
     pressed = true;
-
-    // Screen coordinates, not client: the window itself moves during a drag, so
-    // client coordinates would measure the pointer against a moving frame.
-    const originX = event.screenX;
-    const originY = event.screenY;
-    let dragging = false;
-
-    const cleanup = () => {
-      pressed = false;
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-    };
-
-    const onMove = (move: PointerEvent) => {
-      if (dragging) return;
-      if (Math.hypot(move.screenX - originX, move.screenY - originY) <= DRAG_THRESHOLD) return;
-      dragging = true;
-      // Listeners come off first: once the OS drag loop owns the pointer this
-      // webview stops seeing events, and a stale `pressed` would leave the cat
-      // squashed for good.
-      cleanup();
-      void getCurrentWindow().startDragging();
-    };
-
-    const onUp = () => {
-      cleanup();
-      if (!dragging) void ipc.togglePanel();
-    };
-
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    // Only a click toggles the notebook — dragging the cat moves it and leaves
+    // the notebook exactly as it was, open or shut.
+    pressToDrag(event, {
+      // `onEnd` also runs when the drag is handed to the OS, where no
+      // `pointerup` ever comes back; without it the cat stays squashed for good.
+      onEnd: () => (pressed = false),
+      onClick: () => void ipc.togglePanel(),
+    });
   }
 </script>
 

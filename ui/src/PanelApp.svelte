@@ -11,13 +11,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
   import CardTabs from './components/CardTabs.svelte';
   import Composer from './components/Composer.svelte';
   import Icon from './components/Icon.svelte';
   import ItemList from './components/ItemList.svelte';
   import Toast from './components/Toast.svelte';
   import Toolbar from './components/Toolbar.svelte';
+  import { pressToDrag } from './lib/drag';
   import * as ipc from './lib/ipc';
   import { workspace } from './lib/store.svelte';
 
@@ -42,10 +42,17 @@
   });
 
   /** The header and spine are the window's drag handle — the panel has no title
-   * bar of its own. Real controls inside them keep their own presses. */
+   * bar of its own. Real controls inside them keep their own presses.
+   *
+   * Handing the press straight to `startDragging` is what made a plain click on
+   * the header put the notebook away: entering the OS move loop blurs the
+   * window, and a blur is how "the user clicked another app" is detected. Now
+   * the move loop is only entered once the pointer has actually travelled, so a
+   * click on the header does nothing at all — the notebook closes by the ✕, by
+   * Esc, or by clicking the cat. */
   function onDragHandle(event: PointerEvent) {
     if (event.button !== 0 || (event.target as HTMLElement).closest('button, input')) return;
-    void getCurrentWindow().startDragging();
+    pressToDrag(event);
   }
 
   /** A menu that only closes when the pointer leaves it stays open if the pointer

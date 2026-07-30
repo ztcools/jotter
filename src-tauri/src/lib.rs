@@ -119,19 +119,20 @@ pub fn run() {
                         }
                     }
                 }
-                // Clicking away puts the notebook away unless it is pinned, so
-                // the widget never sits on top of the UI under review.
-                (window::PANEL, WindowEvent::Focused(false)) => {
-                    let ui = app.state::<Ui>();
-                    if app.state::<Store>().read(|ws| ws.pinned)
-                        || ui.collapse_suspended()
-                        || !ui.is_open()
-                    {
-                        return;
-                    }
-                    if let Err(err) = window::close_on_blur(app) {
-                        log::error!("close on blur failed: {err}");
-                    }
+                // Clicking away puts the notebook away unless it is pinned, so the
+                // widget never sits on top of the UI under review.
+                //
+                // Both windows, because what matters is the app losing focus, not
+                // one window losing it: dragging the mascot hands focus from the
+                // notebook to the mascot, and if only the notebook's blur were
+                // watched, the next click into another app would arrive when the
+                // notebook had already been blurred — no event, no collapse.
+                //
+                // And not decided here: at this instant focus has left but not yet
+                // arrived, so a drag of our own is indistinguishable from a click
+                // into another app. Every condition is re-read once it settles.
+                (window::PANEL | window::BALL, WindowEvent::Focused(false)) => {
+                    window::close_on_blur_when_settled(app);
                 }
                 _ => {}
             }
