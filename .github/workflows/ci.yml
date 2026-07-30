@@ -61,9 +61,12 @@ jobs:
       - name: Format
         working-directory: src-tauri
         run: cargo fmt --check
+      # `--features custom-protocol` is what the shipped exe is built with, so it
+      # is what gets linted: the feature decides tauri's `cfg(dev)`, and without
+      # it clippy checks a configuration that never ships.
       - name: Clippy
         working-directory: src-tauri
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --features custom-protocol --all-targets -- -D warnings
 
   installer:
     name: Windows installer
@@ -91,6 +94,15 @@ jobs:
           path: |
             src-tauri/target/release/jotter.exe
             src-tauri/target/release/bundle/nsis/*.exe
+      # After the upload, deliberately: if the exe misbehaves the job still fails,
+      # but the binary that misbehaved is downloadable. Screen capture is skipped
+      # because a runner has no desktop to capture; everything else — that the
+      # webviews load the *embedded* bundle, the window geometry, the click, the
+      # drag, the cross-window event — runs unattended.
+      - name: Acceptance (runs the exe and inspects it)
+        run: >
+          powershell -ExecutionPolicy Bypass -File scripts/acceptance.ps1
+          -Exe src-tauri/target/release/jotter.exe -SkipPixel -Stop
 
   container-build:
     name: Containerised cross-build

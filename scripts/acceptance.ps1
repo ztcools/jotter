@@ -1,0 +1,477 @@
+﻿<#
+.SYNOPSIS
+    Runs the packaged exe on Windows and inspects what it actually does.
+
+.DESCRIPTION
+    `cargo build`, clippy and svelte-check all passed on a binary that shipped
+    showing the browser's ERR_CONNECTION_REFUSED page: none of them run the exe.
+    This does. It drives the real process and asserts, independently —
+
+      1. both webviews loaded the *embedded* bundle (CDP: location.href), mounted
+         content, and recorded no frontend errors;
+      2. both windows exist with the geometry the Rust side is supposed to give
+         them — the mascot at its logical size, the notebook at one ninth of the
+         work area (Win32: EnumWindows + GetWindowRect, DPI-aware);
+      3. a click on the mascot opens the notebook *beside* it, and a second click
+         puts it away (CDP Input, i.e. the real pointer path, not a JS shortcut);
+      4. moving the mascot drags the notebook along, and the new position is
+         persisted to workspace.json;
+      5. a write from one window reaches the other — an item added in the
+         notebook lands in the mascot's badge, which is the whole event chain
+         from store hook to a second webview's DOM;
+      6. the windows composite real pixels onto the desktop, proven by diffing a
+         screen capture of each rect against the same rect with the window
+         hidden. A transparent always-on-top window that paints nothing is
+         invisible on screen while looking perfectly healthy to every API.
+
+    Anything this script adds to the user's workspace, it removes again.
+
+    Run from Windows (or from WSL via powershell.exe). Exits non-zero on any
+    failed assertion so it can gate a release.
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File acceptance.ps1 -Exe C:\path\Jotter.exe
+#>
+[CmdletBinding()]
+param(
+    [string]$Exe = "$env:USERPROFILE\Desktop\Jotter.exe",
+    [int]$Port = 9222,
+    # Seconds to wait for the webviews to expose debugging targets.
+    [int]$Timeout = 25,
+    # Leave the widget running afterwards (it is the user's, after all).
+    [switch]$Stop,
+    # Skip the screen-capture assertions, which need a real desktop session. Every
+    # other check works headless, which is what makes this script usable in CI.
+    [switch]$SkipPixel
+)
+
+$ErrorActionPreference = 'Stop'
+
+# ---------------------------------------------------------------- Win32 interop
+if (-not ('W32' -as [type])) {
+    Add-Type -Namespace '' -Name W32 -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+[DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr p);
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+[DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+[DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+[DllImport("user32.dll")] public static extern int GetWindowLongW(IntPtr h, int i);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+[DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int t, uint flags);
+[DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
+[DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr ctx);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassNameW(IntPtr h, System.Text.StringBuilder s, int max);
+public delegate bool EnumProc(IntPtr h, IntPtr p);
+'@
+}
+
+# BEFORE any window or graphics call. PowerShell is DPI-unaware by default, which
+# silently virtualises every coordinate it reads or captures: on a 150% display
+# GetWindowRect reported a 108px window as 72px, and a capture of that rect
+# clipped the mascot — a bug in the harness that looked exactly like a bug in the
+# app. Per-monitor-v2 (-4) puts this process in the same physical pixel space as
+# the widget and as workspace.json.
+$dpiAware = [W32]::SetProcessDpiAwarenessContext([IntPtr](-4))
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+
+# Redirected output (a CI log, a WSL pipe) otherwise goes out in the console's
+# ANSI code page and mangles every non-ASCII character this script prints.
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
+
+$script:Failures = 0
+function Ok   ($m) { Write-Host "[ok]   $m" }
+function Info ($m) { Write-Host "[info] $m" }
+function Bad  ($m) { $script:Failures++; Write-Host "[FAIL] $m" }
+function Check($cond, $m) { if ($cond) { Ok $m } else { Bad $m } }
+function Near($a, $b, $tol) { return ([math]::Abs($a - $b) -le $tol) }
+
+$GWL_EXSTYLE = -20; $WS_EX_TOPMOST = 0x8; $WS_EX_LAYERED = 0x80000
+$SW_HIDE = 0; $SW_SHOWNA = 8
+$SWP_NOSIZE = 0x1; $SWP_NOZORDER = 0x4; $SWP_NOACTIVATE = 0x10
+
+function Get-AppWindows([int]$ProcId) {
+    # An ArrayList mutated via .Add, not `$found += ...`: a scriptblock used as a
+    # delegate can read the enclosing scope but any assignment inside it creates
+    # a scriptblock-local variable, so `+=` would silently collect nothing.
+    $found = New-Object System.Collections.ArrayList
+    $cb = [W32+EnumProc] {
+        param($h, $p)
+        $owner = 0; [W32]::GetWindowThreadProcessId($h, [ref]$owner) | Out-Null
+        if ($owner -eq $ProcId) {
+            $r = New-Object W32+RECT; [W32]::GetWindowRect($h, [ref]$r) | Out-Null
+            $sb = New-Object System.Text.StringBuilder 256
+            [W32]::GetClassNameW($h, $sb, 256) | Out-Null
+            $ex = [W32]::GetWindowLongW($h, $GWL_EXSTYLE)
+            [void]$found.Add([pscustomobject]@{
+                Handle  = $h
+                Class   = $sb.ToString()
+                Visible = [W32]::IsWindowVisible($h)
+                X = $r.L; Y = $r.T; W = ($r.R - $r.L); H = ($r.B - $r.T)
+                TopMost = [bool]($ex -band $WS_EX_TOPMOST)
+                Layered = [bool]($ex -band $WS_EX_LAYERED)
+            })
+        }
+        return $true
+    }
+    [W32]::EnumWindows($cb, [IntPtr]::Zero) | Out-Null
+    return $found.ToArray()
+}
+
+# The mascot is the square one; the notebook is the other Tauri window. Chosen by
+# shape rather than by title, because both windows carry the same title.
+function Get-Ball($wins) {
+    return $wins | Where-Object { $_.Class -eq 'Tauri Window' -and (Near $_.W $_.H 4) } |
+        Select-Object -First 1
+}
+function Get-Panel($wins) {
+    return $wins | Where-Object { $_.Class -eq 'Tauri Window' -and -not (Near $_.W $_.H 4) } |
+        Select-Object -First 1
+}
+
+function Get-RectPixels($x, $y, $w, $h) {
+    $bmp = New-Object System.Drawing.Bitmap $w, $h
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size $w, $h))
+    $g.Dispose()
+    $px = New-Object 'int[]' ($w * $h)
+    for ($j = 0; $j -lt $h; $j++) {
+        for ($i = 0; $i -lt $w; $i++) { $px[$j * $w + $i] = $bmp.GetPixel($i, $j).ToArgb() }
+    }
+    $bmp.Dispose()
+    return $px
+}
+
+function Test-Composites($win, $label) {
+    if ($SkipPixel) { Info "$label pixel diff skipped (-SkipPixel)"; return }
+    if (-not $win) { Bad "no $label window to pixel-test"; return }
+    $shown = Get-RectPixels $win.X $win.Y $win.W $win.H
+    [W32]::ShowWindow($win.Handle, $SW_HIDE) | Out-Null; Start-Sleep -Milliseconds 700
+    $hidden = Get-RectPixels $win.X $win.Y $win.W $win.H
+    [W32]::ShowWindow($win.Handle, $SW_SHOWNA) | Out-Null; Start-Sleep -Milliseconds 300
+    $diff = 0
+    for ($i = 0; $i -lt $shown.Length; $i++) { if ($shown[$i] -ne $hidden[$i]) { $diff++ } }
+    $pct = [math]::Round(100 * $diff / $shown.Length, 1)
+    # A weak-by-construction assertion: it proves the window paints, not that it
+    # paints the right thing. Judging the drawing is a job for the eye — see
+    # `pnpm dev` + preview.html for that.
+    Check ($diff -gt 0) "$label composites real pixels ($diff/$($shown.Length) differ, $pct%)"
+
+    # …and the corners must be *un*changed, because a rounded transparent widget
+    # shows the desktop through them. This is the only check that distinguishes the
+    # intended surface from an opaque rectangle of the right size: window styles do
+    # not say — WebView2 transparency is composited, so WS_EX_LAYERED is not set.
+    # Every arithmetic term is parenthesised because `,` binds tighter than `-` in
+    # PowerShell: `@($win.W - 2, 1)` means `$win.W - (2, 1)`.
+    $corners = @(@(1, 1), @(($win.W - 2), 1), @(1, ($win.H - 2)), @(($win.W - 2), ($win.H - 2)))
+    $clear = 0
+    foreach ($c in $corners) {
+        $i = $c[1] * $win.W + $c[0]
+        if ($shown[$i] -eq $hidden[$i]) { $clear++ }
+    }
+    # Three of four, not four: a corner that happens to sit over something the
+    # desktop redrew on its own would fail an all-four rule for no good reason.
+    Check ($clear -ge 3) "$label has transparent corners ($clear/4 show the desktop through)"
+}
+
+# ------------------------------------------------------------------- CDP client
+function Connect-Cdp([string]$Url) {
+    $ws = New-Object System.Net.WebSockets.ClientWebSocket
+    $ws.ConnectAsync([Uri]$Url, [Threading.CancellationToken]::None).Wait(10000) | Out-Null
+    return $ws
+}
+
+$script:CdpId = 0
+function Invoke-Cdp($Ws, [string]$Method, $Params) {
+    $script:CdpId++
+    $id = $script:CdpId
+    $req = @{ id = $id; method = $Method; params = $Params } | ConvertTo-Json -Depth 8 -Compress
+    $seg = [ArraySegment[byte]]::new([Text.Encoding]::UTF8.GetBytes($req))
+    $Ws.SendAsync($seg, 'Text', $true, [Threading.CancellationToken]::None).Wait(5000) | Out-Null
+
+    # Read frames until the reply to this id arrives; CDP interleaves events.
+    $buf = [ArraySegment[byte]]::new((New-Object byte[] 262144))
+    for ($n = 0; $n -lt 80; $n++) {
+        $sb = New-Object Text.StringBuilder
+        do {
+            $r = $Ws.ReceiveAsync($buf, [Threading.CancellationToken]::None)
+            $r.Wait(15000) | Out-Null
+            [void]$sb.Append([Text.Encoding]::UTF8.GetString($buf.Array, 0, $r.Result.Count))
+        } until ($r.Result.EndOfMessage)
+        $msg = $sb.ToString() | ConvertFrom-Json
+        if ($msg.id -eq $id) { return $msg }
+    }
+    throw "no CDP reply for id $id ($Method)"
+}
+
+function Invoke-Js($Ws, [string]$Expression) {
+    $msg = Invoke-Cdp $Ws 'Runtime.evaluate' @{
+        expression = $Expression; returnByValue = $true; awaitPromise = $true
+    }
+    if ($msg.result.exceptionDetails) {
+        throw "JS threw: $($msg.result.exceptionDetails.exception.description)"
+    }
+    return $msg.result.result.value
+}
+
+# A real pointer press and release inside the webview, which is what the mascot
+# listens for. `Runtime.evaluate`-ing a `.click()` would bypass the pointerdown /
+# threshold / pointerup logic that decides click-versus-drag — i.e. it would test
+# something the user never does.
+function Send-Click($Ws, [int]$X, [int]$Y) {
+    foreach ($t in @('mousePressed', 'mouseReleased')) {
+        Invoke-Cdp $Ws 'Input.dispatchMouseEvent' @{
+            type = $t; x = $X; y = $Y; button = 'left'; clickCount = 1
+            buttons = $(if ($t -eq 'mousePressed') { 1 } else { 0 })
+        } | Out-Null
+    }
+}
+
+# ------------------------------------------------------------------------- run
+if (-not (Test-Path $Exe)) { Bad "exe not found: $Exe"; exit 1 }
+$exeItem = Get-Item $Exe
+Info "exe      $Exe  ($($exeItem.Length) bytes, $($exeItem.LastWriteTime))"
+Info "dpi-aware $dpiAware"
+
+$workspacePath = "$env:APPDATA\com.ztcools.jotter\workspace.json"
+$logPath = "$env:LOCALAPPDATA\com.ztcools.jotter\logs\Jotter.log"
+# Only lines this run appends are this run's problem. Counted in lines rather than
+# bytes: the log is UTF-8, so a byte offset would slice a multi-byte character in
+# half the first time anything Chinese is logged.
+$logLinesBefore = 0
+if (Test-Path $logPath) {
+    $logLinesBefore = @(Get-Content $logPath -Encoding UTF8).Count
+}
+
+Get-Process Jotter -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Milliseconds 500
+
+# The webview only opens a debugging port when asked; this is the sole way to see
+# the pages the app is really showing.
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$Port"
+$proc = Start-Process $Exe -PassThru
+Info "pid      $($proc.Id)"
+
+$targets = @()
+for ($i = 0; $i -lt ($Timeout * 2); $i++) {
+    Start-Sleep -Milliseconds 500
+    try {
+        $targets = @((Invoke-RestMethod "http://127.0.0.1:$Port/json" -TimeoutSec 2) |
+            Where-Object { $_.type -eq 'page' })
+        # Waiting for the count alone catches a webview that exists but has not
+        # navigated yet: the notebook is listed as `about:blank` for a moment
+        # before its document loads, which reads exactly like a broken window.
+        if (@($targets | Where-Object { $_.url -like '*panel.html*' }).Count -ge 1 -and
+            @($targets | Where-Object { $_.url -like 'http*' -and $_.url -notlike '*panel.html*' }).Count -ge 1) {
+            break
+        }
+    } catch { }
+}
+Check ($targets.Count -ge 2) "both webviews exposed a CDP target ($($targets.Count) found)"
+if ($targets.Count -lt 1) { exit 1 }
+$targets | ForEach-Object { Info "target   $($_.url)" }
+
+$ballTarget  = $targets |
+    Where-Object { $_.url -like 'http*' -and $_.url -notlike '*panel.html*' } | Select-Object -First 1
+$panelTarget = $targets | Where-Object { $_.url -like '*panel.html*' } | Select-Object -First 1
+Check ($null -ne $ballTarget)  "mascot document is loaded"
+Check ($null -ne $panelTarget) "notebook document is loaded"
+if (-not $ballTarget -or -not $panelTarget) { exit 1 }
+
+$ballWs  = Connect-Cdp $ballTarget.webSocketDebuggerUrl
+$panelWs = Connect-Cdp $panelTarget.webSocketDebuggerUrl
+
+# One round trip per window, so a slow first paint cannot desynchronise the
+# assertions.
+$probeJs = @'
+JSON.stringify({
+  href:   location.href,
+  ready:  document.readyState,
+  app:    (document.querySelector("#app") ? document.querySelector("#app").innerHTML.length : -1),
+  nodes:  document.querySelectorAll("*").length,
+  body:   (document.body ? document.body.innerText : "").slice(0, 120),
+  ipc:    typeof window.__TAURI_INTERNALS__,
+  errors: (window.__jotterErrors || []).slice(0, 5)
+})
+'@
+foreach ($pair in @(@{ n = 'mascot'; ws = $ballWs }, @{ n = 'notebook'; ws = $panelWs })) {
+    $p = (Invoke-Js $pair.ws $probeJs) | ConvertFrom-Json
+    Info "$($pair.n): $($p.href) — $($p.app) bytes, $($p.nodes) nodes, ipc=$($p.ipc)"
+    # tauri.localhost is the custom protocol serving the embedded bundle. A dev
+    # binary reports http://localhost:1420 or, with nothing there, chrome-error://.
+    Check ($p.href -notlike 'chrome-error*')  "$($pair.n) is not on a browser error page"
+    Check ($p.href -like '*tauri.localhost*') "$($pair.n) loaded the embedded bundle"
+    Check ($p.app -gt 0)                      "$($pair.n) mounted content ($($p.app) bytes)"
+    Check ($p.ipc -eq 'object')               "$($pair.n) has the Tauri IPC bridge"
+    Check ($p.errors.Count -eq 0)             "$($pair.n) recorded no frontend errors"
+    if ($p.errors.Count) { $p.errors | ForEach-Object { Info "  js error: $_" } }
+    if ($p.href -like 'chrome-error*') { Info "  body: $($p.body)" }
+}
+
+# ------------------------------------------------------------------- geometry
+$wins = Get-AppWindows $proc.Id
+foreach ($w in $wins) {
+    Info ("window   {0} {1}x{2} at ({3},{4}) visible={5} topmost={6} layered={7} class={8}" -f `
+        $w.Handle, $w.W, $w.H, $w.X, $w.Y, $w.Visible, $w.TopMost, $w.Layered, $w.Class)
+}
+$ball = Get-Ball $wins
+$panel = Get-Panel $wins
+Check ($null -ne $ball)  "mascot window exists"
+Check ($null -ne $panel) "notebook window exists (created up front, hidden)"
+if (-not $ball -or -not $panel) { exit 1 }
+
+Check ($ball.Visible)      "mascot is visible on startup"
+Check (-not $panel.Visible) "notebook starts hidden"
+Check ($ball.TopMost)      "mascot is always-on-top"
+Check ($panel.TopMost)     "notebook is always-on-top"
+
+$dpi = [W32]::GetDpiForWindow($ball.Handle)
+$scale = $dpi / 96.0
+# The monitor the mascot is on, not the primary one: `Monitor::work_area()` on the
+# Rust side is per-monitor too, so on a multi-head desktop the primary screen's
+# numbers would be the wrong yardstick.
+$work = [System.Windows.Forms.Screen]::FromHandle($ball.Handle).WorkingArea
+Info "dpi      $dpi (scale $scale), work area $($work.Width)x$($work.Height) at ($($work.X),$($work.Y))"
+
+# Must match `window.rs`: BALL_SIZE, PANEL_GRID, PANEL_MIN, PANEL_MAX.
+$ballExpect = [math]::Round(104 * $scale)
+Check (Near $ball.W $ballExpect 6) "mascot is $ballExpect px physical (104 logical), got $($ball.W)"
+
+function Get-ExpectedCell($physical, $min, $max) {
+    $logical = $physical / $scale / 3.0
+    return [math]::Round([math]::Min([math]::Max($logical, $min), $max) * $scale)
+}
+$panelExpectW = Get-ExpectedCell $work.Width  460 760
+$panelExpectH = Get-ExpectedCell $work.Height 300 520
+$ninth = [math]::Round(100.0 * ($panel.W * $panel.H) / ($work.Width * $work.Height), 1)
+Info "notebook $($panel.W)x$($panel.H) (expected ${panelExpectW}x${panelExpectH}), $ninth% of work area"
+Check (Near $panel.W $panelExpectW 8) "notebook width is the clamped 1/3 of the work area"
+Check (Near $panel.H $panelExpectH 8) "notebook height is the clamped 1/3 of the work area"
+
+$inWork = ($ball.X -ge $work.X) -and ($ball.Y -ge $work.Y) -and
+          (($ball.X + $ball.W) -le ($work.X + $work.Width)) -and
+          (($ball.Y + $ball.H) -le ($work.Y + $work.Height))
+Check $inWork "mascot sits inside the work area (clear of the taskbar)"
+
+# ---------------------------------------------------------------- interaction
+$gap = [math]::Round(12 * $scale)
+
+$edge = [math]::Round(10 * $scale)
+
+function Test-Anchored($ballWin, $panelWin, $label) {
+    $rightOf = Near $panelWin.X ($ballWin.X + $ballWin.W + $gap) 6
+    $leftOf  = Near ($panelWin.X + $panelWin.W) ($ballWin.X - $gap) 6
+    Check ($rightOf -or $leftOf) "$label — notebook is beside the mascot (gap $gap px)"
+
+    # Centred on the mascot, *unless* that would have pushed it off screen and the
+    # clamp moved it: accepting "within half a panel height" instead would accept
+    # very nearly anything, and accepting only dead-centre would fail whenever the
+    # mascot sits near the top or bottom of the work area.
+    $centred = Near ($panelWin.Y + $panelWin.H / 2) ($ballWin.Y + $ballWin.H / 2) 6
+    $clamped = (Near $panelWin.Y ($work.Y + $edge) 2) -or
+               (Near ($panelWin.Y + $panelWin.H) ($work.Y + $work.Height - $edge) 2)
+    Check ($centred -or $clamped) `
+        "$label — notebook is centred on the mascot (or clamped to the work area)"
+}
+
+Info "clicking the mascot…"
+Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2))
+Start-Sleep -Milliseconds 900
+$wins = Get-AppWindows $proc.Id
+$panel = Get-Panel $wins
+Check ($panel.Visible) "a click on the mascot opens the notebook"
+if ($panel.Visible) {
+    Info ("notebook at ({0},{1}) {2}x{3}" -f $panel.X, $panel.Y, $panel.W, $panel.H)
+    Test-Anchored (Get-Ball $wins) $panel 'on open'
+    Test-Composites $panel 'notebook'
+}
+
+# Moving the mascot must drag the notebook along. Done with SetWindowPos rather
+# than synthetic mouse input: `startDragging` hands the gesture to the OS drag
+# loop, which only responds to real hardware events — but what is being tested
+# here is the tether (the Moved handler) and the persistence, both of which a
+# programmatic move exercises exactly the same way.
+$moveX = $work.X + [int]($work.Width * 0.45)
+$moveY = $work.Y + [int]($work.Height * 0.35)
+Info "moving the mascot to ($moveX,$moveY)…"
+[W32]::SetWindowPos($ball.Handle, [IntPtr]::Zero, $moveX, $moveY, 0, 0,
+    ($SWP_NOSIZE -bor $SWP_NOZORDER -bor $SWP_NOACTIVATE)) | Out-Null
+Start-Sleep -Milliseconds 900
+$wins = Get-AppWindows $proc.Id
+$ball = Get-Ball $wins; $panel = Get-Panel $wins
+Check (Near $ball.X $moveX 4) "mascot moved to the requested position"
+Test-Anchored $ball $panel 'after a drag'
+
+# --------------------------------------------------------- cross-window events
+# An item added through the notebook's IPC must show up in the mascot's badge:
+# store hook -> `badge` event -> the other webview's DOM. Cleaned up afterwards.
+$probeText = "acceptance probe (safe to delete)"
+$added = (Invoke-Js $panelWs @"
+(async () => {
+  const inv = window.__TAURI_INTERNALS__.invoke;
+  const ws = await inv('load_workspace');
+  const cardId = ws.activeCardId;
+  const item = await inv('add_item', { cardId, text: '$probeText' });
+  const after = await inv('load_workspace');
+  const open = after.cards.reduce((n, c) => n + c.items.filter(i => !i.done).length, 0);
+  return JSON.stringify({ cardId, itemId: item.id, open });
+})()
+"@) | ConvertFrom-Json
+Start-Sleep -Milliseconds 600
+$badge = Invoke-Js $ballWs 'JSON.stringify(document.querySelector(".badge") ? document.querySelector(".badge").textContent : null)'
+$badgeText = $badge | ConvertFrom-Json
+# The badge caps its label, so the expectation has to cap the same way.
+$badgeExpect = if ($added.open -gt 99) { '99+' } else { [string]$added.open }
+Info "badge    '$badgeText' for $($added.open) open item(s)"
+Check ($badgeText -eq $badgeExpect) "a write in the notebook updates the mascot's badge"
+
+Invoke-Js $panelWs @"
+window.__TAURI_INTERNALS__.invoke('delete_item', { cardId: '$($added.cardId)', itemId: '$($added.itemId)' })
+"@ | Out-Null
+Info "probe item removed"
+
+# ------------------------------------------------------------------- put away
+Info "clicking the mascot again…"
+Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2))
+Start-Sleep -Milliseconds 900
+$wins = Get-AppWindows $proc.Id
+Check (-not (Get-Panel $wins).Visible) "a second click puts the notebook away"
+Check ((Get-Ball $wins).Visible) "the mascot stays visible"
+
+# Closing the panel flushes the mascot's position, so the move above must now be
+# on disk in physical pixels — which is only comparable because this process is
+# DPI-aware.
+if (Test-Path $workspacePath) {
+    try {
+        # `-Encoding UTF8` is not optional: Windows PowerShell reads a BOM-less file
+        # in the console's ANSI code page, which turns any CJK note in the workspace
+        # into invalid JSON — a harness failure that looks like corrupted user data.
+        $saved = (Get-Content $workspacePath -Raw -Encoding UTF8 | ConvertFrom-Json).ballPosition
+        Info "saved    ballPosition = ($($saved.x),$($saved.y))"
+        Check ((Near $saved.x $moveX 4) -and (Near $saved.y $moveY 4)) `
+            "the new mascot position was persisted to workspace.json"
+    } catch {
+        Bad "workspace.json is not readable JSON: $($_.Exception.Message)"
+    }
+} else {
+    Bad "workspace.json not found at $workspacePath"
+}
+
+Test-Composites (Get-Ball $wins) 'mascot'
+
+# ----------------------------------------------------------------------- logs
+if (Test-Path $logPath) {
+    $fresh = @(Get-Content $logPath -Encoding UTF8 | Select-Object -Skip $logLinesBefore)
+    $errors = @($fresh | Where-Object { $_ -match 'ERROR' })
+    Check ($errors.Count -eq 0) "no ERROR lines logged during this run"
+    $errors | ForEach-Object { Info "  $_" }
+    Info "--- tail $logPath ---"
+    ($fresh | Where-Object { $_ } | Select-Object -Last 10) | ForEach-Object { Info "  $_" }
+}
+
+if ($Stop) { Get-Process Jotter -ErrorAction SilentlyContinue | Stop-Process -Force }
+else { Info "widget left running (pass -Stop to close it)" }
+
+Write-Host ""
+if ($script:Failures -eq 0) { Write-Host "ACCEPTANCE PASS"; exit 0 }
+Write-Host "ACCEPTANCE FAIL ($script:Failures assertion(s))"
+exit 1
