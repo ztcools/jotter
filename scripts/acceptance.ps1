@@ -392,10 +392,22 @@ if (Test-Path $logPath) {
 Get-Process Jotter -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 500
 
-# The webview only opens a debugging port when asked; this is the sole way to see
-# the pages the app is really showing.
-$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$Port"
-$proc = Start-Process $Exe -PassThru
+# The webview only opens a debugging port when asked, through this environment
+# variable, and reading the pages the app really shows depends on it arriving.
+#
+# Not Start-Process, which launches through ShellExecute: a process created that
+# way can be handed an environment block that is not the one we just modified. On
+# a desktop it happened to work; on a CI runner the same call produced a webview
+# whose command line had no trace of the switch, so nothing ever listened on the
+# port. CreateProcess with an explicit environment (UseShellExecute = false) is
+# the only way to be sure the child sees what we set.
+$exePath = (Resolve-Path $Exe).Path
+$psi = New-Object Diagnostics.ProcessStartInfo
+$psi.FileName = $exePath
+$psi.WorkingDirectory = Split-Path -Parent $exePath
+$psi.UseShellExecute = $false
+$psi.EnvironmentVariables['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = "--remote-debugging-port=$Port"
+$proc = [Diagnostics.Process]::Start($psi)
 Info "pid      $($proc.Id)"
 
 $targets = @()
