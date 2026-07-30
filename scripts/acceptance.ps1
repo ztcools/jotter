@@ -450,6 +450,34 @@ function Show-LaunchDiagnostics {
     Info "diag: port $Port $(if ($reachable) { 'accepts connections' } else { 'is not listening' })"
     try { Info "diag: /json/version -> $(Get-Local '/json/version')" }
     catch { Info "diag: /json/version unreachable ($($_.Exception.Message))" }
+    # What the webview hosts were actually launched with. The switch travels to
+    # WebView2 through an environment variable, and a machine that drops it on
+    # the way — a policy, a shim, an older loader — is indistinguishable from a
+    # port that is merely slow to open, unless the command line is read.
+    try {
+        # Ours only: every other WebView2 app on the machine shows up in this
+        # list too, and each is several processes.
+        $hostArgs = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" -ErrorAction Stop |
+            Select-Object -ExpandProperty CommandLine |
+            Where-Object { $_ -like '*com.ztcools.jotter*' })
+        $withSwitch = @($hostArgs | Where-Object { $_ -like '*--remote-debugging-port*' })
+        Info "diag: $($withSwitch.Count) of $($hostArgs.Count) of our webview host(s) got --remote-debugging-port"
+        if ($hostArgs.Count -and -not $withSwitch.Count) {
+            # First few switches only: a full WebView2 command line is a paragraph.
+            Info "diag: host args start: $((($hostArgs[0] -split ' --' | Select-Object -First 5) -join ' --'))"
+        }
+    }
+    catch { Info "diag: could not read webview host command lines ($($_.Exception.Message))" }
+    # Edge policy can forbid remote debugging outright, and does so silently.
+    foreach ($k in 'HKLM:\SOFTWARE\Policies\Microsoft\Edge',
+        'HKLM:\SOFTWARE\Policies\Microsoft\EdgeWebView',
+        'HKCU:\SOFTWARE\Policies\Microsoft\Edge') {
+        $p = Get-ItemProperty -Path $k -ErrorAction SilentlyContinue
+        if (-not $p) { continue }
+        $set = @($p.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' } |
+            ForEach-Object { "$($_.Name)=$($_.Value)" })
+        if ($set.Count) { Info "diag: policy $k -> $($set -join ', ')" }
+    }
     if (Test-Path $logPath) {
         $fresh = @(Get-Content $logPath -Encoding UTF8 | Select-Object -Skip $logLinesBefore)
         if ($fresh.Count) { $fresh | Select-Object -Last 20 | ForEach-Object { Info "diag log: $_" } }
