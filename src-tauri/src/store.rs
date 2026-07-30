@@ -13,16 +13,24 @@ use crate::model::{now_ms, Workspace, SCHEMA_VERSION};
 /// real one, so a power loss mid-save leaves the previous good document intact
 /// rather than a half-written one. `Store` is the only place that touches disk;
 /// swapping in a different backend means reimplementing `load`/`persist` alone.
+/// Called after every successful mutation with the number of unfinished items.
+///
+/// A hook on the store rather than a call at the end of each command: there are
+/// eight mutating commands plus the tray, and "remember to notify" is exactly the
+/// kind of step that gets forgotten when a ninth is added.
+pub type ChangeHook = Box<dyn Fn(usize) + Send + Sync>;
+
 pub struct Store {
     path: PathBuf,
     inner: RwLock<Workspace>,
+    on_change: ChangeHook,
 }
 
 impl Store {
     /// Loads the workspace at `path`, falling back to a fresh one. A file that
     /// exists but cannot be parsed is preserved under a `.corrupt-<ts>` name so
     /// the user's notes are never silently discarded.
-    pub fn load(path: PathBuf) -> Result<Self> {
+    pub fn load(path: PathBuf, on_change: ChangeHook) -> Result<Self> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -51,6 +59,7 @@ impl Store {
         let store = Self {
             path,
             inner: RwLock::new(workspace),
+            on_change,
         };
         store.flush()?;
         Ok(store)
@@ -69,10 +78,17 @@ impl Store {
     /// invariant check runs on every mutation so no command can leave the UI
     /// pointing at a card that no longer exists.
     pub fn write<R>(&self, f: impl FnOnce(&mut Workspace) -> Result<R>) -> Result<R> {
-        let mut guard = self.inner.write();
-        let out = f(&mut guard)?;
-        guard.normalise();
-        persist(&self.path, &guard)?;
+        let (out, open) = {
+            let mut guard = self.inner.write();
+            let out = f(&mut guard)?;
+            guard.normalise();
+            persist(&self.path, &guard)?;
+            (out, guard.open_count())
+        };
+        // Deliberately outside the lock: the hook reaches into Tauri, and a
+        // listener that reads the store back would deadlock against our own
+        // write guard.
+        (self.on_change)(open);
         Ok(out)
     }
 

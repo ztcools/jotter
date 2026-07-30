@@ -13,12 +13,12 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "label": "main",
+        "label": "ball",
         "title": "Jotter",
-        "width": 72,
-        "height": 72,
-        "minWidth": 72,
-        "minHeight": 72,
+        "width": 104,
+        "height": 104,
+        "minWidth": 104,
+        "minHeight": 104,
         "resizable": false,
         "maximizable": false,
         "minimizable": false,
@@ -39,7 +39,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -51,7 +53,10 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["SimpChinese", "English"]
+        "languages": [
+          "SimpChinese",
+          "English"
+        ]
       }
     }
   }

@@ -13,6 +13,14 @@ name = "jotter_lib"
 # template ships by default are omitted — they only slow the link step here.
 crate-type = ["rlib"]
 
+[features]
+# DO NOT REMOVE. `tauri`'s build script computes `dev = !custom-protocol`, and a
+# dev build loads `build.devUrl` (http://localhost:1420) instead of the assets
+# embedded at compile time — a shipped exe then shows the browser's
+# ERR_CONNECTION_REFUSED page. The `tauri` CLI passes this on `tauri build`; our
+# container build calls cargo directly, so it must pass it explicitly.
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

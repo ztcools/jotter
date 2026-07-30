@@ -80,11 +80,9 @@ fn new_card_and_show<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
         Ok(())
     })?;
 
-    let win = window::main_window(app)?;
-    win.show()?;
-    win.set_focus()?;
-    window::set_expanded(&win, &store, true)?;
-    let _ = win.emit_workspace_changed();
-    let _ = win.emit_panel_state(true);
+    window::set_panel_open(app, true)?;
+    // Broadcast, not per-window: the mascot's badge and the notebook both mirror
+    // this workspace and neither of them made the change.
+    let _ = app.emit_workspace_changed();
     Ok(())
 }

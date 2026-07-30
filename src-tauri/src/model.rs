@@ -137,6 +137,14 @@ impl Workspace {
         }
     }
 
+    /// Unfinished items across every card — what the mascot's badge reports.
+    pub fn open_count(&self) -> usize {
+        self.cards
+            .iter()
+            .map(|c| c.items.iter().filter(|i| !i.done).count())
+            .sum()
+    }
+
     /// Accent for the next card, continuing the palette rotation.
     pub fn next_accent(&self) -> u8 {
         self.cards

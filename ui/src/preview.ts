@@ -78,16 +78,22 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
   }
 }
 
-// The shape `@tauri-apps/api` v2 probes for. Kept to the minimum the app touches.
+const label = new URLSearchParams(location.search).get('state') === 'ball' ? 'ball' : 'panel';
+
+// The shape `@tauri-apps/api` v2 probes for. Kept to the minimum the app touches:
+// `invoke` covers the commands, and event `listen` resolves through it too, which
+// is why the Rust-driven listeners simply never fire in here.
 Object.defineProperty(window, '__TAURI_INTERNALS__', {
   value: {
-    metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
+    metadata: { currentWindow: { label }, currentWebview: { label } },
     transformCallback: (cb: unknown) => cb,
     invoke: async (cmd: string, args: Record<string, unknown> = {}) => handle(cmd, args),
   },
 });
 
 const params = new URLSearchParams(location.search);
+// The app ships two windows, so the harness previews one at a time:
+// `?state=ball` is the mascot, anything else is the notebook.
 const ball = params.get('state') === 'ball';
 
 // `?card=2` opens a different fixture card — index 2 is empty, which is the
@@ -98,16 +104,16 @@ const target = document.getElementById('app');
 if (!target) throw new Error('mount target #app is missing');
 
 // Pin the surface to the top-left at exactly the size Rust gives the real
-// window. Headless Chrome does not reliably honour `--window-size`, so anything
-// centred in the viewport can fall outside the screenshot crop.
-const [w, h] = ball ? [72, 72] : [368, 476];
+// window (the panel figure is the 1/9-of-work-area cell on a 2560x1440 screen at
+// 150% scaling). Headless Chrome does not reliably honour `--window-size`, so
+// anything centred in the viewport can fall outside the screenshot crop.
+const [w, h] = ball ? [104, 104] : [569, 311];
 target.style.cssText = `position:fixed;left:0;top:0;width:${w}px;height:${h}px`;
 
 const { mount } = await import('svelte');
-const App = (await import('./App.svelte')).default;
-const { workspace } = await import('./lib/store.svelte');
 
-mount(App, { target });
-
-// The harness has no Rust side to drive window state, so set it directly.
-if (!ball) workspace.syncExpanded(true);
+if (ball) {
+  mount((await import('./BallApp.svelte')).default, { target });
+} else {
+  mount((await import('./PanelApp.svelte')).default, { target });
+}

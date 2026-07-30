@@ -1,13 +1,14 @@
 <!--
   Inline icon set. Hand-written 24x24 stroke paths rather than an icon package:
-  the app needs nine glyphs, and bundling a library for that would outweigh the
-  entire rest of the frontend.
+  the app needs a dozen glyphs, and bundling a library for that would outweigh
+  the entire rest of the frontend.
 -->
 <script lang="ts">
   const PATHS = {
     plus: ['M12 5v14', 'M5 12h14'],
     check: ['M20 6 9 17l-5-5'],
     'check-all': ['M2 13l4 4 8-8', 'M12 15l3 3 7-8'],
+    pen: ['M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z', 'M14.5 5.5l4 4'],
     copy: [
       'M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1Z',
       'M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1',

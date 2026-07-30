@@ -49,7 +49,6 @@ class WorkspaceState {
   cards = $state<Card[]>([]);
   activeId = $state<string | null>(null);
   pinned = $state(false);
-  expanded = $state(false);
   ready = $state(false);
 
   active = $derived(this.cards.find((c) => c.id === this.activeId) ?? null);
@@ -161,15 +160,11 @@ class WorkspaceState {
 
   // ------------------------------------------------------------------ window
 
-  async setExpanded(expanded: boolean) {
-    if (this.expanded === expanded) return;
-    const res = await guard(() => ipc.togglePanel(expanded), '窗口操作失败');
-    if (res.ok) this.expanded = expanded;
-  }
-
-  /** Applies a state change that Rust initiated (tray, shortcut, focus loss). */
-  syncExpanded(expanded: boolean) {
-    this.expanded = expanded;
+  /** Puts the notebook away. There is no matching `open`: the mascot window
+   * asks Rust to toggle, and Rust hides or shows the panel window — this side
+   * never tracks a visibility flag that the OS already owns. */
+  async close() {
+    await guard(() => ipc.closePanel(), '窗口操作失败');
   }
 
   async togglePinned() {

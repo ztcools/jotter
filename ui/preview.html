@@ -4,8 +4,9 @@
   so the UI can be opened in a plain browser (and screenshotted in CI or by
   hand) without building the Rust side.
 
-  Vite's production build only picks up index.html, so this never ships.
-  Usage: pnpm dev, then http://localhost:1420/preview.html?state=panel
+  Vite's build inputs are index.html and panel.html only, so this never ships.
+  Usage: pnpm dev, then http://localhost:1420/preview.html — add `?state=ball`
+  for the mascot, `?card=2` for the empty-card state.
 -->
 <html lang="zh-CN">
   <head>

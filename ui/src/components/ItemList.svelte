@@ -36,7 +36,9 @@
 <div class="list" bind:this={scroller}>
   {#if workspace.items.length === 0}
     <p class="empty">
-      <span class="glyph"><Icon name="check-all" size={20} /></span>
+      <!-- A pen, not a tick: on a card with nothing on it yet, "all done" is the
+           opposite of what there is to say. -->
+      <span class="glyph"><Icon name="pen" size={19} /></span>
       这张卡片还是空的<br />
       <em>在下面写下你发现的第一个问题</em>
     </p>

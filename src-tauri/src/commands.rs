@@ -4,7 +4,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use crate::error::{Error, Result};
 use crate::model::{Card, Item, Workspace};
 use crate::store::Store;
-use crate::window::{self, PanelStateEmitter, Ui};
+use crate::window::{self, Ui};
 
 /// Longest single jotted line we accept. Generous for a note, tight enough that
 /// a runaway paste cannot bloat the workspace document.
@@ -196,13 +196,18 @@ pub fn write_text_file(path: String, text: String) -> Result<()> {
 
 // --------------------------------------------------------------------- window
 
+/// What a click on the mascot does. Rust owns the open/closed state rather than
+/// taking it as an argument: the webview cannot see the focus-loss close that may
+/// have happened microseconds earlier, so a state it computed would be stale
+/// exactly when it matters.
 #[tauri::command]
-pub fn toggle_panel<R: Runtime>(
-    window: WebviewWindow<R>,
-    store: State<'_, Store>,
-    expanded: bool,
-) -> Result<()> {
-    window::set_expanded(&window, &store, expanded)
+pub fn toggle_panel<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    window::toggle_panel(&app)
+}
+
+#[tauri::command]
+pub fn close_panel<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    window::set_panel_open(&app, false)
 }
 
 /// Pinning suppresses the collapse-on-focus-loss behaviour, for when you need
@@ -223,12 +228,26 @@ pub fn suspend_auto_collapse(ui: State<'_, Ui>, suspend: bool) {
 }
 
 #[tauri::command]
-pub fn hide_widget<R: Runtime>(window: WebviewWindow<R>, store: State<'_, Store>) -> Result<()> {
-    // Collapse first so the widget comes back as a ball, not a stale panel.
-    window::set_expanded(&window, &store, false)?;
-    window.hide()?;
-    let _ = window.emit_panel_state(false);
-    Ok(())
+pub fn hide_widget<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    window::hide_all(&app)
+}
+
+/// Frontend errors, into the same log file as everything else.
+///
+/// A widget has no menu bar and no devtools in a release build, so an exception
+/// in the webview is otherwise completely silent — the window just stops
+/// updating. This is the only way those failures are visible after shipping.
+#[tauri::command]
+pub fn report_error(window: WebviewWindow<impl Runtime>, message: String, detail: Option<String>) {
+    let message = clean(&message, MAX_TITLE_LEN * 8);
+    match detail {
+        Some(detail) => log::error!(
+            "[{}] {message} | {}",
+            window.label(),
+            clean(&detail, MAX_TEXT_LEN)
+        ),
+        None => log::error!("[{}] {message}", window.label()),
+    }
 }
 
 #[tauri::command]

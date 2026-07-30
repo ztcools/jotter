@@ -34,7 +34,11 @@ export const copyText = (text: string) => invoke<void>('copy_text', { text });
 export const writeTextFile = (path: string, text: string) =>
   invoke<void>('write_text_file', { path, text });
 
-export const togglePanel = (expanded: boolean) => invoke<void>('toggle_panel', { expanded });
+/** Rust owns the open/closed state — see the `toggle_panel` command for why the
+ * webview must not compute one and pass it in. */
+export const togglePanel = () => invoke<void>('toggle_panel');
+
+export const closePanel = () => invoke<void>('close_panel');
 
 export const setPinned = (pinned: boolean) => invoke<void>('set_pinned', { pinned });
 
@@ -46,3 +50,7 @@ export const suspendAutoCollapse = (suspend: boolean) =>
 export const hideWidget = () => invoke<void>('hide_widget');
 
 export const quitApp = () => invoke<void>('quit_app');
+
+/** Sends a webview failure to the app log. See `lib/errors.ts`. */
+export const reportError = (message: string, detail?: string) =>
+  invoke<void>('report_error', { message, detail });

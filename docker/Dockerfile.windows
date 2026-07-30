@@ -7,14 +7,17 @@
 # result is a portable single-file .exe — WebView2 is linked statically, and the
 # runtime itself ships with Windows 10 20H2 and later.
 #
-# Build:  make windows
-# Output: dist-win/Jotter.exe
-FROM rust:1-bookworm AS build
+# Build:  make windows        Output: dist-win/Jotter.exe
+# Lint:   make lint-docker    (same toolchain, no host Rust needed)
+FROM rust:1-bookworm AS base
 
 ARG NODE_MAJOR=22
 ARG RUST_TARGET=x86_64-pc-windows-msvc
 
-ENV DEBIAN_FRONTEND=noninteractive \
+# Promoted to an environment variable because `ARG` does not survive into the
+# stages built `FROM base` below, and both of them need the target triple.
+ENV RUST_TARGET=${RUST_TARGET} \
+    DEBIAN_FRONTEND=noninteractive \
     CARGO_TARGET_DIR=/target \
     CARGO_TERM_COLOR=never \
     PNPM_HOME=/usr/local/pnpm \
@@ -29,7 +32,11 @@ RUN apt-get update \
     && corepack enable \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rustup target add "${RUST_TARGET}" \
+# rustfmt and clippy are not in the slim `rust` image. They belong in the base
+# stage rather than in `lint`, because `make fmt-docker` runs the formatter from
+# this same image on a machine with no Rust installed.
+RUN rustup component add rustfmt clippy \
+    && rustup target add "${RUST_TARGET}" \
     && cargo install --locked cargo-xwin
 
 # `tauri-build` compiles a Windows resource script (icon + version info) into the
@@ -53,20 +60,43 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-# tauri-build embeds ../dist, so the frontend has to exist before cargo runs.
+# tauri-build embeds ../dist, so the frontend has to exist before cargo runs —
+# for `cargo clippy` just as much as for the real build.
 RUN pnpm build
+
+# Formatting and lints, in the one place with a Rust toolchain. Kept as a stage
+# of its own so `make windows` never pays for it, and so a lint failure is a
+# build failure rather than something a human has to notice in the log.
+# Clippy runs against the Windows target: the code is compiled for Windows, and
+# linting a different target would be linting different `cfg`s.
+FROM base AS lint
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/target,sharing=locked \
+    --mount=type=cache,target=/root/.cache/cargo-xwin,sharing=locked \
+    set -eux; \
+    cd src-tauri; \
+    cargo fmt --check; \
+    cargo xwin clippy --locked --release --features custom-protocol \
+      --target "${RUST_TARGET}" --all-targets -- -D warnings
+
+FROM base AS build
 
 # Cargo's registry and target dir are cache mounts, which are invisible to
 # later stages — hence copying the artefact out inside the same layer.
 # `--locked`: the committed Cargo.lock is authoritative, so a stale lockfile
 # fails the build instead of quietly resolving different dependency versions
 # than the ones this exe was tested with.
+# `--features custom-protocol`: what the `tauri` CLI would pass. Omitting it
+# builds a *dev* binary that loads build.devUrl at runtime — the exe launches,
+# finds no dev server, and renders the browser's connection-error page.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/target,sharing=locked \
     --mount=type=cache,target=/root/.cache/cargo-xwin,sharing=locked \
     set -eux; \
-    cargo xwin build --locked --release --target "${RUST_TARGET}" --manifest-path src-tauri/Cargo.toml; \
+    cargo xwin build --locked --release --features custom-protocol \
+      --target "${RUST_TARGET}" --manifest-path src-tauri/Cargo.toml; \
     mkdir -p /out; \
     cp "/target/${RUST_TARGET}/release/jotter.exe" /out/Jotter.exe
 

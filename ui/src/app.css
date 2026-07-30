@@ -33,6 +33,11 @@
   --a4: #f59e0b;
   --a5: #f43f5e;
 
+  /* The notebook page: a hair warmer than pure white, so it reads as paper
+     next to the browser windows this widget sits on top of. */
+  --paper: #fffcf6;
+  --paper-dot: rgba(96, 84, 140, 0.12);
+
   --surface: rgba(255, 255, 255, 0.93);
   --surface-sunken: rgba(112, 112, 140, 0.07);
   --surface-hover: rgba(112, 112, 140, 0.1);
@@ -49,6 +54,9 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --paper: #24222c;
+    --paper-dot: rgba(255, 255, 255, 0.08);
+
     --surface: rgba(28, 28, 36, 0.95);
     --surface-sunken: rgba(255, 255, 255, 0.06);
     --surface-hover: rgba(255, 255, 255, 0.1);

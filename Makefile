@@ -5,7 +5,7 @@ RUST_TARGET ?= x86_64-pc-windows-msvc
 IMAGE       ?= jotter-winbuild
 OUT_DIR     ?= dist-win
 
-.PHONY: help install icons dev check fmt lint build windows clean
+.PHONY: help install icons dev check fmt fmt-docker lint lint-docker build windows clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -26,9 +26,20 @@ check: ## Type-check the frontend
 fmt: ## Format the Rust sources
 	cd src-tauri && cargo fmt
 
-lint: ## Rust formatting check + clippy (denies warnings)
+# Runs as the invoking user so the rewritten sources do not come back owned by
+# root; HOME is redirected because that user has none inside the container.
+fmt-docker: ## Format the Rust sources inside the container, for machines with no Rust
+	docker build --file docker/Dockerfile.windows --target base --tag $(IMAGE)-base .
+	docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp \
+		--volume "$(CURDIR):/app" --workdir /app/src-tauri $(IMAGE)-base cargo fmt
+
+lint: ## Rust formatting check + clippy (denies warnings; needs a host toolchain)
 	cd src-tauri && cargo fmt --check
-	cd src-tauri && cargo clippy --locked --target $(RUST_TARGET) --all-targets -- -D warnings
+	cd src-tauri && cargo clippy --locked --features custom-protocol \
+		--target $(RUST_TARGET) --all-targets -- -D warnings
+
+lint-docker: ## Same checks inside the build container, for machines with no Rust
+	docker build --file docker/Dockerfile.windows --target lint .
 
 build: ## Build the frontend bundle only
 	pnpm build
