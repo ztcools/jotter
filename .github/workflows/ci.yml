@@ -6,6 +6,11 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+  # The installer job only ever runs for a tag, which makes it the one job that
+  # cannot be exercised without minting a public tag. This lets it be run by hand
+  # against a branch (it then builds and inspects the exe, and skips publishing —
+  # there is no release to attach to).
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -71,7 +76,7 @@ jobs:
   installer:
     name: Windows installer
     needs: [frontend, rust]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     # Only to attach the built files to the tag's release; nothing else here
     # writes to the repository.
@@ -115,6 +120,7 @@ jobs:
       # inspected on a real Windows machine. `gh` is preinstalled on the runner —
       # no third-party action in the path that produces the download people run.
       - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
