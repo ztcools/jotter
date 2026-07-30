@@ -12,10 +12,14 @@
   and costs no network request.
 -->
 <script lang="ts">
-  let { pressed = false, open = false }: { pressed?: boolean; open?: boolean } = $props();
+  let {
+    pressed = false,
+    open = false,
+    stir = false,
+  }: { pressed?: boolean; open?: boolean; stir?: boolean } = $props();
 </script>
 
-<svg class="cat" class:pressed class:open viewBox="0 0 100 100" aria-hidden="true">
+<svg class="cat" class:pressed class:open class:stir viewBox="0 0 100 100" aria-hidden="true">
   <defs>
     <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#fffaf3" />
@@ -192,48 +196,84 @@
   }
 
   /* ------------------------------------------------------------- animation
+
+     The cat is still at rest, and moves in short bursts: on hover, on press,
+     when the notebook opens, when a finding lands, and every twenty-odd
+     seconds so it reads as alive rather than as a sticker. `stir` is what
+     turns a burst on; `BURST_MS` in `BallApp.svelte` is how long it stays on,
+     and must outlast the longest keyframe here.
+
+     That is a performance decision as much as a design one. Measured on this
+     104px transparent always-on-top window: *any* animation that keeps running
+     costs 25-47% of a core, because the window's layer has to be recomposited
+     into the desktop every frame, and it costs that whether one part moves or
+     eight — the marginal cost of each extra animation was inside the noise. A
+     still mascot costs 1%. So there is no such thing here as a cheap idle
+     animation, only a short one; every keyframe below has a finite iteration
+     count that leaves the cat back at rest.
+
      Transforms use viewBox coordinates: Chromium's default `transform-box` for
      SVG elements is `view-box`, so an origin like `68px 78px` is the tail root
-     regardless of how large the window renders. Durations are deliberately
-     co-prime-ish so the parts never fall into lockstep and start looking
-     mechanical. */
+     regardless of how large the window renders. */
 
-  .cat-body {
-    animation: float 3.4s var(--ease) infinite alternate;
+  .stir .cat-body {
+    animation: float 0.7s var(--ease) 2 alternate;
   }
 
   .body {
     transform-origin: 50px 86px;
-    animation: breathe 2.9s var(--ease) infinite alternate;
+  }
+
+  .stir .body {
+    animation: breathe 0.7s var(--ease) 2 alternate;
   }
 
   .drop {
     transform-origin: 50px 91.5px;
-    animation: shade 2.9s var(--ease) infinite alternate;
+  }
+
+  .stir .drop {
+    animation: shade 0.7s var(--ease) 2 alternate;
   }
 
   .head {
     transform-origin: 50px 63px;
-    animation: nod 5.3s var(--ease) infinite alternate;
+  }
+
+  .stir .head {
+    animation: nod 1.4s var(--ease);
   }
 
   .tail {
     transform-origin: 69px 78px;
-    animation: wag 2.3s var(--ease) infinite alternate;
   }
 
-  .open .tail {
-    animation-duration: 1.05s; /* pleased to be useful */
+  /* Four half-cycles rather than one sweep: a flick series reads as a tail,
+     a single sweep reads as a metronome. */
+  .stir .tail {
+    animation: wag 0.35s var(--ease) 4 alternate;
+  }
+
+  .stir.open .tail {
+    animation-duration: 0.26s; /* pleased to be useful */
   }
 
   .ear-l {
     transform-origin: 32px 23px;
-    animation: twitch-l 6.7s var(--ease) infinite;
   }
 
   .ear-r {
     transform-origin: 68px 23px;
-    animation: twitch-r 8.3s var(--ease) infinite;
+  }
+
+  /* Offset within their own keyframes rather than by `animation-delay`, so both
+     ears finish inside the burst. */
+  .stir .ear-l {
+    animation: flick-l 1.4s var(--ease);
+  }
+
+  .stir .ear-r {
+    animation: flick-r 1.4s var(--ease);
   }
 
   .eye-l {
@@ -244,8 +284,8 @@
     transform-origin: 61px 43px;
   }
 
-  .eye {
-    animation: blink 5.9s var(--ease) infinite;
+  .stir .eye {
+    animation: blink 1.4s var(--ease);
   }
 
   @keyframes float {
@@ -277,12 +317,18 @@
     }
   }
 
+  /* A tilt out and back, not a sweep between two extremes: the burst has to
+     end where it started or the cat would jump when the animation is removed. */
   @keyframes nod {
-    from {
-      transform: rotate(-2.2deg);
+    0%,
+    100% {
+      transform: rotate(0deg);
     }
-    to {
-      transform: rotate(2.2deg);
+    35% {
+      transform: rotate(-2.4deg);
+    }
+    75% {
+      transform: rotate(1.8deg);
     }
   }
 
@@ -295,43 +341,44 @@
     }
   }
 
-  /* One flick per cycle, held still the rest of the time: a continuous
-     ear rotation looks like a glitch, a single twitch looks alive. */
-  @keyframes twitch-l {
+  @keyframes flick-l {
     0%,
-    8%,
+    18%,
+    60%,
     100% {
       transform: rotate(0deg);
     }
-    3% {
+    30% {
       transform: rotate(-9deg);
     }
-    5.5% {
+    42% {
       transform: rotate(3deg);
     }
   }
 
-  @keyframes twitch-r {
+  @keyframes flick-r {
     0%,
-    46%,
+    34%,
+    76%,
     100% {
       transform: rotate(0deg);
     }
-    41% {
+    46% {
       transform: rotate(9deg);
     }
-    43.5% {
+    58% {
       transform: rotate(-3deg);
     }
   }
 
   @keyframes blink {
     0%,
-    93%,
+    58%,
+    70%,
     100% {
       transform: scaleY(1);
     }
-    95.5% {
+    64% {
       transform: scaleY(0.06);
     }
   }
@@ -355,9 +402,8 @@
     opacity: 0.7;
   }
 
-  /* `app.css` clamps every animation to 1ms under reduced motion, which for an
-     infinite alternate keyframe means a flicker rather than calm. Stop them
-     outright instead. */
+  /* `app.css` clamps every animation to 1ms under reduced motion, which for a
+     burst means a flicker rather than calm. Stop them outright instead. */
   @media (prefers-reduced-motion: reduce) {
     .cat *,
     .cat {

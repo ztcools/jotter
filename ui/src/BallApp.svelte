@@ -20,6 +20,54 @@
   let pressed = $state(false);
   let panelOpen = $state(false);
   let badge = $state(0);
+  /** True while the cat is playing one burst of movement. Nothing in this window
+   * animates continuously: on a transparent always-on-top window a running
+   * animation costs a quarter to a half of a CPU core however small it is, and a
+   * still one costs about a hundredth. See the animation note in `Cat.svelte`. */
+  let stir = $state(false);
+
+  /** Longer than the longest keyframe in `Cat.svelte`, so a burst is never cut
+   * off part-way through a movement. */
+  const BURST_MS = 1500;
+  /** Gap between unprompted bursts, jittered so the cat does not tick like a
+   * clock. At this duty cycle being alive costs about a point of one core more
+   * than being still. */
+  const IDLE_MIN_MS = 19_000;
+  const IDLE_JITTER_MS = 11_000;
+
+  let burstTimer: ReturnType<typeof setTimeout> | undefined;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Plays one burst, restarting it if one is already running.
+   *
+   * The class has to leave the DOM and come back for CSS keyframes to restart,
+   * which is why this drops `stir` and sets it in the next frame rather than
+   * simply assigning `true`. */
+  function stirOnce() {
+    // A hidden window composites nothing, and waking it to animate off-screen is
+    // the one truly wasted frame. One gate for every trigger, so asking for
+    // reduced motion really does mean a mascot that never moves.
+    if (document.visibilityState === 'hidden') return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    clearTimeout(burstTimer);
+    stir = false;
+    requestAnimationFrame(() => {
+      stir = true;
+      burstTimer = setTimeout(() => (stir = false), BURST_MS);
+    });
+  }
+
+  /** Chained timeouts rather than an interval, so the gap can be re-jittered
+   * each time. */
+  function scheduleIdleStir() {
+    idleTimer = setTimeout(
+      () => {
+        stirOnce();
+        scheduleIdleStir();
+      },
+      IDLE_MIN_MS + Math.random() * IDLE_JITTER_MS,
+    );
+  }
 
   let label = $derived(
     panelOpen
@@ -36,8 +84,17 @@
     const track = <T,>(event: string, run: (payload: T) => void) => {
       void listen<T>(event, (e) => run(e.payload)).then((off) => disposers.push(off));
     };
-    track<number>('badge', (count) => (badge = count));
-    track<boolean>('panel-state', (open) => (panelOpen = open));
+    // A new finding and the notebook opening are both worth a look up from the
+    // cat; a finding being ticked off is not, or clearing a card would set the
+    // mascot dancing.
+    track<number>('badge', (count) => {
+      if (count > badge) stirOnce();
+      badge = count;
+    });
+    track<boolean>('panel-state', (open) => {
+      panelOpen = open;
+      stirOnce();
+    });
 
     // First paint has no event to wait for; one snapshot read seeds the badge.
     void ipc
@@ -47,7 +104,16 @@
       })
       .catch(() => {});
 
-    return () => disposers.forEach((off) => off());
+    // One burst on arrival, then on its own schedule: the cat stretches when the
+    // widget appears.
+    stirOnce();
+    scheduleIdleStir();
+
+    return () => {
+      disposers.forEach((off) => off());
+      clearTimeout(burstTimer);
+      clearTimeout(idleTimer);
+    };
   });
 
   function onPointerDown(event: PointerEvent) {
@@ -74,11 +140,12 @@
     class="hit"
     class:lit={badge > 0}
     onpointerdown={onPointerDown}
+    onpointerenter={stirOnce}
     title={label}
     aria-label={label}
     aria-pressed={panelOpen}
   >
-    <Cat {pressed} open={panelOpen} />
+    <Cat {pressed} {stir} open={panelOpen} />
     {#if badge > 0}
       <span class="badge">{badge > 99 ? '99+' : badge}</span>
     {/if}
@@ -116,7 +183,9 @@
   }
 
   /* A faint halo while anything is unresolved: readable from the corner of the
-     eye without the mascot having to shout. */
+     eye without the mascot having to shout. Static, not pulsing — the badge is
+     usually non-zero, so a pulse here would be the one animation that runs all
+     day, at a quarter of a core. */
   .lit::before {
     content: '';
     position: absolute;
@@ -127,17 +196,8 @@
       color-mix(in oklab, var(--accent) 30%, transparent) 0%,
       transparent 70%
     );
-    animation: pulse 2.8s var(--ease) infinite alternate;
+    opacity: 0.62;
     pointer-events: none;
-  }
-
-  @keyframes pulse {
-    from {
-      opacity: 0.35;
-    }
-    to {
-      opacity: 0.8;
-    }
   }
 
   .badge {
@@ -166,13 +226,6 @@
       box-shadow:
         0 2px 6px rgba(0, 0, 0, 0.5),
         0 0 0 2px rgba(28, 28, 36, 0.9);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .lit::before {
-      animation: none;
-      opacity: 0.55;
     }
   }
 </style>

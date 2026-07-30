@@ -22,7 +22,11 @@
       6. the windows composite real pixels onto the desktop, proven by diffing a
          screen capture of each rect against the same rect with the window
          hidden. A transparent always-on-top window that paints nothing is
-         invisible on screen while looking perfectly healthy to every API.
+         invisible on screen while looking perfectly healthy to every API;
+      7. nothing animates forever, and the process tree stays close to free
+         while idle. A build that passed all of the above once spent 46% of a
+         core sitting still, because on a transparent always-on-top window each
+         animation frame recomposites the whole layer into the desktop.
 
     Anything this script adds to the user's workspace, it removes again.
 
@@ -575,6 +579,62 @@ if ($away) {
 else {
     Info "skipped click-away check: could not start a second app"
 }
+
+# ------------------------------------------------------------------ idle cost
+# The widget is on screen from login to shutdown, so its cost while nobody is
+# touching it is a feature, not a footnote. This section exists because a build
+# that passed every other assertion above burned 46% of a CPU core doing nothing:
+# on a transparent always-on-top window every animation frame recomposites the
+# window's layer into the desktop, so a mascot that breathes continuously costs
+# about as much as a video. The fix was to make every ambient movement a finite
+# burst, and these two checks are what stop it coming back.
+
+# 1. Nothing may animate forever. Cheaper and far more specific than the CPU
+#    reading below: it names the offender instead of reporting a number.
+$foreverJs = @'
+(() => { const a = document.getAnimations ? document.getAnimations() : [];
+  return JSON.stringify(a.filter(x => {
+    const t = x.effect && x.effect.getComputedTiming ? x.effect.getComputedTiming() : {};
+    return t.iterations === Infinity || t.iterations === null || t.activeDuration === Infinity;
+  }).map(x => x.animationName || String(x))); })()
+'@ -replace "`r?`n", ' '
+foreach ($pair in @(@{n = 'mascot'; ws = $ballWs }, @{n = 'notebook'; ws = $panelWs })) {
+    $forever = @((Invoke-Js $pair.ws $foreverJs | ConvertFrom-Json))
+    Check ($forever.Count -eq 0) `
+        "$($pair.n) has no animation that runs forever$(if ($forever.Count) { ": $($forever -join ', ')" })"
+}
+
+# 2. …and the resulting cost, measured. Sums the whole tree, because the work
+#    lands in the WebView2 renderer and GPU processes rather than in ours.
+function Get-TreeCpu([int]$RootPid) {
+    $all = Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId
+    $ids = New-Object System.Collections.Generic.HashSet[int]
+    [void]$ids.Add($RootPid)
+    # WebView2 nests its children a few levels deep; repeat until the set stops
+    # growing rather than assuming a depth.
+    for ($pass = 0; $pass -lt 6; $pass++) {
+        foreach ($p in $all) { if ($ids.Contains([int]$p.ParentProcessId)) { [void]$ids.Add([int]$p.ProcessId) } }
+    }
+    $sum = [TimeSpan]::Zero
+    foreach ($id in $ids) {
+        $o = Get-Process -Id $id -ErrorAction SilentlyContinue
+        if ($o) { $sum += $o.TotalProcessorTime }
+    }
+    return $sum
+}
+
+# Generous enough that a burst landing inside the window cannot fail it (one
+# 1.5s burst is worth ~6 points here), tight enough that anything animating
+# continuously — the defect this guards against — cannot pass.
+$IDLE_CPU_BUDGET = 15.0
+$cpuBefore = Get-TreeCpu $proc.Id
+$clock = [Diagnostics.Stopwatch]::StartNew()
+Start-Sleep -Seconds 12
+$clock.Stop()
+$cpuMs = ((Get-TreeCpu $proc.Id) - $cpuBefore).TotalMilliseconds
+$idlePct = 100 * $cpuMs / $clock.Elapsed.TotalMilliseconds
+Info ("idle cpu {0:N1}% of one core over {1:N0}s (budget {2:N0}%)" -f $idlePct, $clock.Elapsed.TotalSeconds, $IDLE_CPU_BUDGET)
+Check ($idlePct -lt $IDLE_CPU_BUDGET) "the widget is close to free while idle"
 
 # ----------------------------------------------------------------------- logs
 if (Test-Path $logPath) {
