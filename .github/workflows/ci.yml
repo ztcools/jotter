@@ -96,13 +96,16 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
       # After the upload, deliberately: if the exe misbehaves the job still fails,
       # but the binary that misbehaved is downloadable. Screen capture is skipped
-      # because a runner has no desktop to capture; everything else — that the
-      # webviews load the *embedded* bundle, the window geometry, the click, the
-      # drag, the cross-window event — runs unattended.
+      # because a runner has no desktop to capture, and the idle-CPU reading
+      # because a percentage of one core on a shared runner measures the
+      # neighbours; the invariant behind that reading — nothing animates forever —
+      # is asserted here regardless. Everything else — that the webviews load the
+      # *embedded* bundle, the window geometry, the click, the drag, the
+      # cross-window event — runs unattended.
       - name: Acceptance (runs the exe and inspects it)
         run: >
           powershell -ExecutionPolicy Bypass -File scripts/acceptance.ps1
-          -Exe src-tauri/target/release/jotter.exe -SkipPixel -Stop
+          -Exe src-tauri/target/release/jotter.exe -SkipPixel -SkipCpu -Stop
 
   container-build:
     name: Containerised cross-build

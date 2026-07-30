@@ -46,7 +46,12 @@ param(
     [switch]$Stop,
     # Skip the screen-capture assertions, which need a real desktop session. Every
     # other check works headless, which is what makes this script usable in CI.
-    [switch]$SkipPixel
+    [switch]$SkipPixel,
+    # Skip the idle-CPU reading. A percentage of one core is only meaningful on a
+    # machine that is otherwise quiet; on a shared two-core CI runner it says more
+    # about the neighbours than about us. The invariant behind it — that nothing
+    # animates forever — is asserted deterministically either way.
+    [switch]$SkipCpu
 )
 
 $ErrorActionPreference = 'Stop'
@@ -627,14 +632,18 @@ function Get-TreeCpu([int]$RootPid) {
 # 1.5s burst is worth ~6 points here), tight enough that anything animating
 # continuously — the defect this guards against — cannot pass.
 $IDLE_CPU_BUDGET = 15.0
-$cpuBefore = Get-TreeCpu $proc.Id
-$clock = [Diagnostics.Stopwatch]::StartNew()
-Start-Sleep -Seconds 12
-$clock.Stop()
-$cpuMs = ((Get-TreeCpu $proc.Id) - $cpuBefore).TotalMilliseconds
-$idlePct = 100 * $cpuMs / $clock.Elapsed.TotalMilliseconds
-Info ("idle cpu {0:N1}% of one core over {1:N0}s (budget {2:N0}%)" -f $idlePct, $clock.Elapsed.TotalSeconds, $IDLE_CPU_BUDGET)
-Check ($idlePct -lt $IDLE_CPU_BUDGET) "the widget is close to free while idle"
+if ($SkipCpu) { Info 'idle cpu reading skipped (-SkipCpu)' }
+else {
+    $cpuBefore = Get-TreeCpu $proc.Id
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    Start-Sleep -Seconds 12
+    $clock.Stop()
+    $cpuMs = ((Get-TreeCpu $proc.Id) - $cpuBefore).TotalMilliseconds
+    $idlePct = 100 * $cpuMs / $clock.Elapsed.TotalMilliseconds
+    Info ("idle cpu {0:N1}% of one core over {1:N0}s (budget {2:N0}%)" -f `
+            $idlePct, $clock.Elapsed.TotalSeconds, $IDLE_CPU_BUDGET)
+    Check ($idlePct -lt $IDLE_CPU_BUDGET) "the widget is close to free while idle"
+}
 
 # ----------------------------------------------------------------------- logs
 if (Test-Path $logPath) {
