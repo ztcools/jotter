@@ -1,0 +1,75 @@
+# syntax=docker/dockerfile:1
+#
+# Reproducible Windows build, from Linux, in a container.
+#
+# `cargo-xwin` fetches the MSVC CRT and Windows SDK headers and drives clang-cl
+# and lld-link, so no Windows machine or Visual Studio install is needed. The
+# result is a portable single-file .exe — WebView2 is linked statically, and the
+# runtime itself ships with Windows 10 20H2 and later.
+#
+# Build:  make windows
+# Output: dist-win/Jotter.exe
+FROM rust:1-bookworm AS build
+
+ARG NODE_MAJOR=22
+ARG RUST_TARGET=x86_64-pc-windows-msvc
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    CARGO_TARGET_DIR=/target \
+    CARGO_TERM_COLOR=never \
+    PNPM_HOME=/usr/local/pnpm \
+    PATH=/usr/local/pnpm:$PATH \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        clang lld ca-certificates curl gnupg \
+    && curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && corepack enable \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add "${RUST_TARGET}" \
+    && cargo install --locked cargo-xwin
+
+# `tauri-build` compiles a Windows resource script (icon + version info) into the
+# exe, which needs an `rc` implementation. Debian only ships the versioned
+# binary, so expose it under the plain name cargo-xwin looks for. Deliberately a
+# layer of its own: adding it to the apt step above would rebuild cargo-xwin.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends llvm \
+    && ln -sf "$(ls /usr/lib/llvm-*/bin/llvm-rc | head -n1)" /usr/local/bin/llvm-rc \
+    && llvm-rc /? > /dev/null 2>&1 || true \
+    && command -v llvm-rc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Dependency manifests first, so an edit to application code does not invalidate
+# the installed node_modules layer. Corepack reads `packageManager` from
+# package.json, so the container resolves the same pnpm that wrote the lockfile.
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+# tauri-build embeds ../dist, so the frontend has to exist before cargo runs.
+RUN pnpm build
+
+# Cargo's registry and target dir are cache mounts, which are invisible to
+# later stages — hence copying the artefact out inside the same layer.
+# `--locked`: the committed Cargo.lock is authoritative, so a stale lockfile
+# fails the build instead of quietly resolving different dependency versions
+# than the ones this exe was tested with.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/target,sharing=locked \
+    --mount=type=cache,target=/root/.cache/cargo-xwin,sharing=locked \
+    set -eux; \
+    cargo xwin build --locked --release --target "${RUST_TARGET}" --manifest-path src-tauri/Cargo.toml; \
+    mkdir -p /out; \
+    cp "/target/${RUST_TARGET}/release/jotter.exe" /out/Jotter.exe
+
+# Artefact-only stage: `docker build --output` lands just this on the host.
+FROM scratch AS artifact
+COPY --from=build /out/Jotter.exe /Jotter.exe
