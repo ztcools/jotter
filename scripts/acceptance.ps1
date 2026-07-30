@@ -89,6 +89,8 @@ if (-not ('W32' -as [type])) {
 [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
 [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
 [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+[DllImport("user32.dll")] public static extern bool ClipCursor(ref RECT r);
+[DllImport("user32.dll", EntryPoint = "ClipCursor")] public static extern bool UnclipCursor(IntPtr r);
 [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassNameW(IntPtr h, System.Text.StringBuilder s, int max);
 public delegate bool EnumProc(IntPtr h, IntPtr p);
 '@
@@ -329,45 +331,94 @@ function Suspend-AutoCollapse($Ws, [bool]$On) {
 # somebody else's hand. Twelve consecutive samples caught it wandering across the
 # screen and the mascot following it into the corner, which is what finally
 # explained a run that failed seven assertions on a binary that passes.
+#
+# Detecting it afterwards is second best, though: by then the measurement is
+# already spoiled. So the parked pointer is also fenced in — ClipCursor confines
+# it to a 3x3 rectangle on the parking spot, and a hand on the mouse then cannot
+# put a `pointermove` over the widget at all. Reported, not assumed: the fence
+# lapses whenever the foreground window changes, which this run does on purpose,
+# so it is re-applied at every sample and the nudge counter stays as the check on
+# whether it held.
 $script:HumanPresses = 0
 $script:PointerNudges = 0
 $script:ParkPoint = $null
+$script:Fenced = $false
+function Set-PointerFence {
+    if (-not $script:ParkPoint) { return }
+    $r = New-Object W32+RECT
+    $r.L = $script:ParkPoint.X - 1; $r.T = $script:ParkPoint.Y - 1
+    $r.R = $script:ParkPoint.X + 2; $r.B = $script:ParkPoint.Y + 2
+    $script:Fenced = [W32]::ClipCursor([ref]$r)
+}
+function Clear-PointerFence {
+    if ($script:Fenced) { [W32]::UnclipCursor([IntPtr]::Zero) | Out-Null }
+    $script:Fenced = $false
+}
+# A run that dies in the middle — a CDP socket that drops, a Ctrl-C, a failed
+# assertion that ends the script early — must not leave somebody's mouse trapped
+# in a 3x3 corner, so the release is wired to the engine shutting down as well as
+# to the ordinary end of the run.
+Register-EngineEvent PowerShell.Exiting -SupportEvent -Action {
+    [W32]::UnclipCursor([IntPtr]::Zero) | Out-Null
+} | Out-Null
 # Re-parking keeps the rest of the run meaningful, but only for the first few
 # nudges: past that the desk is plainly in use and wrestling somebody for their
 # own mouse is not this script's place.
 $REPARK_LIMIT = 3
-function Measure-HumanInput {
+# `$Where` is what makes a disturbed run diagnosable rather than merely suspect: a
+# count at the end says a hand was on the mouse somewhere in ninety seconds, which
+# is not enough to tell a contaminated assertion from a real one. Named samples
+# bracket every synthetic interaction, so a failure that follows a reported
+# displacement is inconclusive by evidence, and a failure between two clean
+# samples is a genuine one.
+function Measure-HumanInput([string]$Where = '') {
     foreach ($vk in 0x01, 0x02) {
-        if ([W32]::GetAsyncKeyState($vk) -band 0x1) { $script:HumanPresses++ }
+        if ([W32]::GetAsyncKeyState($vk) -band 0x1) {
+            $script:HumanPresses++
+            if ($Where) { Info "  a real mouse button went down around: $Where" }
+        }
     }
     if (-not $script:ParkPoint) { return }
     $now = New-Object W32+POINT
     if (-not [W32]::GetCursorPos([ref]$now)) { return }
-    if ((Near $now.X $script:ParkPoint.X 4) -and (Near $now.Y $script:ParkPoint.Y 4)) { return }
-    $script:PointerNudges++
-    if ($script:PointerNudges -le $REPARK_LIMIT) {
-        [W32]::SetCursorPos($script:ParkPoint.X, $script:ParkPoint.Y) | Out-Null
+    $onSpot = (Near $now.X $script:ParkPoint.X 4) -and (Near $now.Y $script:ParkPoint.Y 4)
+    if (-not $onSpot) {
+        $script:PointerNudges++
+        if ($Where) { Info "  the pointer was at ($($now.X),$($now.Y)), not its parking spot, around: $Where" }
+        if ($script:PointerNudges -le $REPARK_LIMIT) {
+            [W32]::SetCursorPos($script:ParkPoint.X, $script:ParkPoint.Y) | Out-Null
+        }
     }
+    # Last, never before reading the position: ClipCursor drags a stray pointer
+    # back inside the rectangle itself, so fencing first would quietly erase the
+    # very displacement the counter above exists to notice.
+    Set-PointerFence
 }
 
 # A real pointer press and release inside the webview, which is what the mascot
 # listens for. `Runtime.evaluate`-ing a `.click()` would bypass the pointerdown /
 # threshold / pointerup logic that decides click-versus-drag — i.e. it would test
 # something the user never does.
-function Send-Click($Ws, [int]$X, [int]$Y) {
+function Send-Click($Ws, [int]$X, [int]$Y, [string]$What = 'a click') {
+    # Sampled before as well as after, because the pointer has to be back on its
+    # spot *while* the press is in flight for the press to mean anything — a stray
+    # pointer noticed afterwards has already spoiled it. Measuring also re-raises
+    # the fence, which any foreground change drops.
+    Measure-HumanInput "just before $What at ($X,$Y)"
     foreach ($t in @('mousePressed', 'mouseReleased')) {
         Invoke-Cdp $Ws 'Input.dispatchMouseEvent' @{
             type = $t; x = $X; y = $Y; button = 'left'; clickCount = 1
             buttons = $(if ($t -eq 'mousePressed') { 1 } else { 0 })
         } | Out-Null
     }
-    Measure-HumanInput
+    Measure-HumanInput "$What at ($X,$Y)"
 }
 
 # A press that travels far enough to become a window drag. The intermediate moves
 # are the point: the threshold that separates a drag from a click only ever sees
 # `pointermove`, so a press-then-release would test the other branch.
-function Send-Drag($Ws, [int]$X, [int]$Y, [int]$By) {
+function Send-Drag($Ws, [int]$X, [int]$Y, [int]$By, [string]$What = 'a drag') {
+    Measure-HumanInput "just before $What from ($X,$Y)"
     Invoke-Cdp $Ws 'Input.dispatchMouseEvent' @{
         type = 'mousePressed'; x = $X; y = $Y; button = 'left'; clickCount = 1; buttons = 1
     } | Out-Null
@@ -379,7 +430,7 @@ function Send-Drag($Ws, [int]$X, [int]$Y, [int]$By) {
     Invoke-Cdp $Ws 'Input.dispatchMouseEvent' @{
         type = 'mouseReleased'; x = ($X + $By); y = ($Y + $By); button = 'left'; clickCount = 1; buttons = 0
     } | Out-Null
-    Measure-HumanInput
+    Measure-HumanInput "$What from ($X,$Y)"
 }
 
 # ------------------------------------------------------------------------- run
@@ -582,7 +633,20 @@ $ball = Get-Ball $wins
 $panel = Get-Panel $wins
 Check ($null -ne $ball)  "mascot window exists"
 Check ($null -ne $panel) "notebook window exists (created up front, hidden)"
-if (-not $ball -or -not $panel) { exit 1 }
+if (-not $ball -or -not $panel) {
+    # One way to get here has nothing to do with the build: if an instance was
+    # already running, the single-instance guard reveals *that* one and lets this
+    # launch exit, so the pid we started owns no windows. "mascot window exists"
+    # failing on a widget that is plainly on screen is baffling until it is said.
+    $others = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exePath)) -ErrorAction SilentlyContinue |
+        Where-Object { $_.Id -ne $proc.Id })
+    if ($others.Count) {
+        Info ("diag: $($others.Count) other instance(s) of $(Split-Path -Leaf $exePath) are running " +
+            "(pid $($others.Id -join ', ')): this launch handed off to one of them and owns no windows. " +
+            'Close it and run again.')
+    }
+    exit 1
+}
 
 Check ($ball.Visible)      "mascot is visible on startup"
 Check (-not $panel.Visible) "notebook starts hidden"
@@ -631,11 +695,24 @@ function Complete-Run {
         ($fresh | Where-Object { $_ } | Select-Object -Last 10) | ForEach-Object { Info "  $_" }
     }
 
+    # The mouse belongs to whoever is sitting there, so give it back before
+    # anything else in this block can fail and leave it fenced in a corner.
+    Clear-PointerFence
     if ($cursorHome -and ($cursorHome.X -or $cursorHome.Y)) {
         [W32]::SetCursorPos($cursorHome.X, $cursorHome.Y) | Out-Null
     }
 
-    if ($Stop) { Get-Process Jotter -ErrorAction SilentlyContinue | Stop-Process -Force }
+    # By pid and by image name, because either alone lets an instance survive: a
+    # hand-off to an already-running widget (the single-instance guard) leaves the
+    # windows with a pid this run never learned, and `Get-Process Jotter` misses a
+    # build that was renamed on the way here — `Jotter-v0.1.0-portable.exe`, say,
+    # which is exactly what the release publishes. A survivor is not harmless: the
+    # next run's launch hands off to it and then finds no windows of its own.
+    if ($Stop) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exePath)) -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+    }
     else { Info "widget left running (pass -Stop to close it)" }
 
     Measure-HumanInput
@@ -691,7 +768,9 @@ if ([W32]::GetCursorPos([ref]$cursorHome)) {
         Select-Object -First 1
     [W32]::SetCursorPos($park.X, $park.Y) | Out-Null
     $script:ParkPoint = [pscustomobject]@{ X = $park.X; Y = $park.Y }
-    Info "pointer parked at ($($park.X),$($park.Y)), was at ($($cursorHome.X),$($cursorHome.Y))"
+    Set-PointerFence
+    Info ("pointer parked at ($($park.X),$($park.Y)), was at ($($cursorHome.X),$($cursorHome.Y))" +
+        "$(if ($script:Fenced) { ', fenced there for the interaction checks' } else { ', unfenced (ClipCursor refused)' })")
 }
 
 $gap = [math]::Round(12 * $scale)
@@ -754,7 +833,7 @@ function Test-Caret($Ws, [string]$Label) {
 }
 
 Info "clicking the mascot…"
-Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2))
+Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2)) 'the opening click on the mascot'
 Start-Sleep -Milliseconds 900
 $wins = Get-AppWindows $proc.Id
 $panel = Get-Panel $wins
@@ -829,7 +908,7 @@ Info "probe item removed"
 
 # ------------------------------------------------------------------- put away
 Info "clicking the mascot again…"
-Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2))
+Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2)) 'the second click on the mascot'
 Start-Sleep -Milliseconds 900
 $wins = Get-AppWindows $proc.Id
 Check (-not (Get-Panel $wins).Visible) "a second click puts the notebook away"
@@ -861,7 +940,7 @@ Test-Composites (Get-Ball $wins) 'mascot'
 # Reopening is the case that regresses: the notebook was hidden rather than
 # destroyed, so a fix that only runs when the document mounts works exactly once.
 Info "reopening the notebook…"
-Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2))
+Send-Click $ballWs ([int]($ball.W / $scale / 2)) ([int]($ball.H / $scale / 2)) 'the reopening click on the mascot'
 Start-Sleep -Milliseconds 1300
 Check ((Get-Panel (Get-AppWindows $proc.Id)).Visible) "the notebook reopens"
 Test-Caret $panelWs "the caret is on the capture line again after a reopen"
@@ -873,7 +952,7 @@ Test-Caret $panelWs "the caret is on the capture line again after a reopen"
 $centreX = [int]($ball.W / $scale / 2)
 $centreY = [int]($ball.H / $scale / 2)
 Info "dragging the mascot with the notebook open…"
-Send-Drag $ballWs $centreX $centreY 26
+Send-Drag $ballWs $centreX $centreY 26 'the drag of the mascot with the notebook open'
 Start-Sleep -Milliseconds 1100
 Check ((Get-Panel (Get-AppWindows $proc.Id)).Visible) `
     "dragging the mascot leaves the notebook open"
@@ -883,10 +962,10 @@ Check ((Get-Panel (Get-AppWindows $proc.Id)).Visible) `
 # held button, and it is the activation churn of entering that loop that blurred
 # the window — so this asserts the half that is reachable: nothing in the document
 # treats a press on the header or the spine as "close".
-Send-Click $panelWs 400 12
+Send-Click $panelWs 400 12 'the press on the notebook header'
 Start-Sleep -Milliseconds 600
 Check ((Get-Panel (Get-AppWindows $proc.Id)).Visible) "a press on the header leaves the notebook open"
-Send-Click $panelWs 11 200
+Send-Click $panelWs 11 200 'the press on the notebook spine'
 Start-Sleep -Milliseconds 600
 Check ((Get-Panel (Get-AppWindows $proc.Id)).Visible) "a press on the spine leaves the notebook open"
 
