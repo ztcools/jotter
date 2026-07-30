@@ -236,8 +236,27 @@ function Test-Composites($win, $label) {
 }
 
 # ------------------------------------------------------------------- CDP client
+# Both of these go out of their way to keep a proxy out of the path. .NET applies
+# the system proxy to 127.0.0.1 as readily as to the internet, and where one is
+# configured the request does not fail fast — it hangs until it times out, which
+# reads exactly like a webview that never opened its debugging port. Two hops on
+# loopback should not depend on a machine's proxy settings at all.
+function Get-Local([string]$Path, [int]$TimeoutMs = 2000) {
+    $req = [Net.HttpWebRequest]::Create("http://127.0.0.1:$Port$Path")
+    $req.Proxy = $null
+    $req.Timeout = $TimeoutMs
+    $req.ReadWriteTimeout = $TimeoutMs
+    $res = $req.GetResponse()
+    try {
+        $reader = New-Object IO.StreamReader($res.GetResponseStream(), [Text.Encoding]::UTF8)
+        try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
+    }
+    finally { $res.Dispose() }
+}
+
 function Connect-Cdp([string]$Url) {
     $ws = New-Object System.Net.WebSockets.ClientWebSocket
+    $ws.Options.Proxy = $null
     $ws.ConnectAsync([Uri]$Url, [Threading.CancellationToken]::None).Wait(10000) | Out-Null
     return $ws
 }
@@ -383,7 +402,7 @@ $targets = @()
 for ($i = 0; $i -lt ($Timeout * 2); $i++) {
     Start-Sleep -Milliseconds 500
     try {
-        $targets = @((Invoke-RestMethod "http://127.0.0.1:$Port/json" -TimeoutSec 2) |
+        $targets = @((Get-Local '/json' | ConvertFrom-Json) |
             Where-Object { $_.type -eq 'page' })
         # Waiting for the count alone catches a webview that exists but has not
         # navigated yet: the notebook is listed as `about:blank` for a moment
@@ -420,7 +439,16 @@ function Show-LaunchDiagnostics {
     }
     Info "diag: WebView2 runtime $(if ($runtime) { $runtime } else { 'NOT FOUND in the registry' })"
     Info "diag: webview host processes: $(@(Get-Process msedgewebview2 -ErrorAction SilentlyContinue).Count)"
-    try { Info "diag: /json/version -> $((Invoke-WebRequest "http://127.0.0.1:$Port/json/version" -TimeoutSec 2).Content)" }
+    # Two states read identically from up here and want opposite fixes: nothing
+    # ever listened on the port (the switch did not reach the webview), or
+    # something is listening and the request never gets an answer out of it.
+    $tcp = New-Object Net.Sockets.TcpClient
+    $reachable = $false
+    try { $reachable = $tcp.ConnectAsync('127.0.0.1', $Port).Wait(1000) -and $tcp.Connected }
+    catch { }
+    finally { $tcp.Dispose() }
+    Info "diag: port $Port $(if ($reachable) { 'accepts connections' } else { 'is not listening' })"
+    try { Info "diag: /json/version -> $(Get-Local '/json/version')" }
     catch { Info "diag: /json/version unreachable ($($_.Exception.Message))" }
     if (Test-Path $logPath) {
         $fresh = @(Get-Content $logPath -Encoding UTF8 | Select-Object -Skip $logLinesBefore)
