@@ -88,8 +88,18 @@ pub fn run() {
             );
             ball.show()?;
 
-            tray::build(app)?;
-            register_shortcut(&handle)?;
+            // Neither of these is load-bearing: the mascot is already on screen
+            // and clickable, and the notebook carries its own hide/quit buttons.
+            // A shell that refuses a tray icon, or a Ctrl+Alt+J another app
+            // claimed first, should cost that one affordance — not the whole
+            // widget. Hiding without a tray is still recoverable: launching the
+            // exe again reveals the running instance.
+            if let Err(err) = tray::build(app) {
+                log::error!("no tray icon, starting without one: {err}");
+            }
+            if let Err(err) = register_shortcut(&handle) {
+                log::error!("no Ctrl+Alt+J hotkey, starting without one: {err}");
+            }
             Ok(())
         })
         .on_window_event(|raw, event| {
