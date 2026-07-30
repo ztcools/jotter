@@ -73,6 +73,10 @@ jobs:
     needs: [frontend, rust]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
+    # Only to attach the built files to the tag's release; nothing else here
+    # writes to the repository.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -106,6 +110,24 @@ jobs:
         run: >
           powershell -ExecutionPolicy Bypass -File scripts/acceptance.ps1
           -Exe src-tauri/target/release/jotter.exe -SkipPixel -SkipCpu -Stop
+
+      # Last, so a release only ever exists for a binary that was started and
+      # inspected on a real Windows machine. `gh` is preinstalled on the runner —
+      # no third-party action in the path that produces the download people run.
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $setup = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (-not $setup) { throw 'no NSIS installer was produced' }
+          $setupPath = $setup.FullName
+          # `jotter.exe` is a fine build output and a poor thing to download.
+          $portable = "Jotter-$tag-portable.exe"
+          Copy-Item src-tauri/target/release/jotter.exe $portable
+          gh release create $tag --verify-tag --title "Jotter $tag" `
+            --notes-file .github/release-notes.md $setupPath $portable
 
   container-build:
     name: Containerised cross-build

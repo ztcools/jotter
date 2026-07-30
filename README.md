@@ -6,9 +6,33 @@
 
 抱着本子的小猫 · 一键复制 · 一键导出 · 多卡片切换 · 全局快捷键 · 单文件 exe
 
+[**下载最新版**](https://github.com/ztcools/jotter/releases/latest) · Windows 10 20H2+ · 免费开源（MIT）
+
 </div>
 
 ---
+
+## 安装
+
+去 [Releases](https://github.com/ztcools/jotter/releases/latest) 拿一个，两者内容相同：
+
+| 文件                          | 适合                                                                   |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `Jotter_<版本>_x64-setup.exe` | 想要开始菜单快捷方式和卸载项的。装到当前用户目录，**不需要管理员权限** |
+| `Jotter-<版本>-portable.exe`  | 只想双击就用的。免安装单文件 3.7 MB，放 U 盘也行                       |
+
+装好后小猫出现在桌面右下角：点它一下摊开本子，敲一行按回车记一条，<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd> 随时唤起。位置拖到哪就记在哪，重启还在原处。
+
+两件要提前说的事：
+
+- **WebView2**：Windows 10 20H2 及以上自带，不用装。更早的系统请先装
+  [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（微软官方）。
+- **SmartScreen 会拦一次**：发布的文件没有代码签名证书（个人项目，证书按年付费），
+  Windows 会提示「未识别的应用」，点「更多信息」→「仍要运行」。介意的话可以自己构建，
+  `make windows` 在容器里交叉编译，产物与免安装版一致。
+
+卸载走系统「应用和功能」（免安装版直接删文件）。笔记不会被删，它在
+`%APPDATA%\com.ztcools.jotter\workspace.json`。
 
 ## 它解决什么
 
@@ -191,6 +215,19 @@ CI 里加 `-SkipPixel -SkipCpu`：runner 没有桌面可截，共享两核上的
 「不允许无限动画」这条不依赖机器，两边都断言。
 
 图标不是二进制资产：`scripts/gen-icons.mjs` 用带符号距离场把矢量定义渲染成全套 PNG 与 DIB 格式 ICO，因此改一处定义即可重出所有尺寸，CI 也会校验图标与生成器一致。
+
+### 发布
+
+打一个 `v*` 标签就够了：
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+[CI](.github/workflows/ci.yml) 会在 Windows runner 上构建安装包与免安装 exe，
+**先跑一遍上面的验收**，然后才用 `gh release create` 把两个文件挂到该标签的 Release 上——
+所以不存在"发出去了但没人启动过"的产物。版本号取自 `package.json` / `tauri.conf.json` /
+`Cargo.toml`，三处要一致。
 
 ## 数据存放
 
