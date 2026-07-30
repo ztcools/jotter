@@ -104,17 +104,24 @@ jobs:
             src-tauri/target/release/jotter.exe
             src-tauri/target/release/bundle/nsis/*.exe
       # After the upload, deliberately: if the exe misbehaves the job still fails,
-      # but the binary that misbehaved is downloadable. Screen capture is skipped
-      # because a runner has no desktop to capture, and the idle-CPU reading
-      # because a percentage of one core on a shared runner measures the
-      # neighbours; the invariant behind that reading — nothing animates forever —
-      # is asserted here regardless. Everything else — that the webviews load the
-      # *embedded* bundle, the window geometry, the click, the drag, the
-      # cross-window event — runs unattended.
+      # but the binary that misbehaved is downloadable.
+      #
+      # What this runner can be asked for is less than it looks. Screen capture
+      # needs a desktop to capture; an idle-CPU percentage on a shared runner
+      # measures the neighbours; and everything the harness drives through the
+      # webview needs a debugging port, which this runner will not produce — the
+      # job runs elevated and the WebView2 loader there discards
+      # WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS wholesale (no Edge policy involved,
+      # and the same exe honours it on an ordinary desktop). So this step asserts
+      # what a runner can honestly answer: the exe starts, both windows exist with
+      # the geometry the Rust side owes them, the mascot is on top and inside the
+      # work area, the notebook starts hidden, and nothing logged an ERROR. It
+      # prints the name of every check it had to leave out, and the full suite runs
+      # on a desktop before a tag goes up (see README, 验收).
       - name: Acceptance (runs the exe and inspects it)
         run: >
           powershell -ExecutionPolicy Bypass -File scripts/acceptance.ps1
-          -Exe src-tauri/target/release/jotter.exe -SkipPixel -SkipCpu -Stop
+          -Exe src-tauri/target/release/jotter.exe -SkipPixel -SkipCpu -NoDevtools -Stop
 
       # Last, so a release only ever exists for a binary that was started and
       # inspected on a real Windows machine. `gh` is preinstalled on the runner —

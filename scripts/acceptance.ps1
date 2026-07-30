@@ -39,6 +39,12 @@
     Run from Windows (or from WSL via powershell.exe). Exits non-zero on any
     failed assertion so it can gate a release.
 
+    Points 1 and 3-7 need a debugging port, and one machine will not hand one
+    over: GitHub's elevated `windows-latest` job drops the environment variable
+    that asks for it (see the note at the `$noCdp` branch). -NoDevtools is for
+    that machine — the window and log assertions still gate, and the run prints
+    the name of every check it did not make. The full suite belongs on a desktop.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File acceptance.ps1 -Exe C:\path\Jotter.exe
 #>
@@ -50,14 +56,17 @@ param(
     [int]$Timeout = 25,
     # Leave the widget running afterwards (it is the user's, after all).
     [switch]$Stop,
-    # Skip the screen-capture assertions, which need a real desktop session. Every
-    # other check works headless, which is what makes this script usable in CI.
+    # Skip the screen-capture assertions, which need a real desktop session.
     [switch]$SkipPixel,
     # Skip the idle-CPU reading. A percentage of one core is only meaningful on a
     # machine that is otherwise quiet; on a shared two-core CI runner it says more
     # about the neighbours than about us. The invariant behind it — that nothing
     # animates forever — is asserted deterministically either way.
-    [switch]$SkipCpu
+    [switch]$SkipCpu,
+    # Tolerate a machine that will not give us a debugging port: run everything
+    # reachable without one and name the assertions that were left out. See the
+    # note above the `$noCdp` branch for the one machine that needs this.
+    [switch]$NoDevtools
 )
 
 $ErrorActionPreference = 'Stop'
@@ -498,22 +507,46 @@ function Show-LaunchDiagnostics {
     else { Info "diag: no log file at $logPath" }
 }
 
-Check ($targets.Count -ge 2) "both webviews exposed a CDP target ($($targets.Count) found)"
-if ($targets.Count -lt 1) { Show-LaunchDiagnostics; exit 1 }
-$targets | ForEach-Object { Info "target   $($_.url)" }
+# A missing debugging port is normally a verdict on the build, and stays one. But
+# on exactly one kind of machine it is a property of the machine: GitHub's
+# `windows-latest` runs the job elevated, and there the WebView2 loader discards
+# WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS wholesale — the browser process comes up
+# with the app's own AdditionalBrowserArguments and none of ours, so nothing ever
+# listens on the port. That was read off a runner: no Edge or EdgeWebView policy
+# exists there, and the very same CI-built exe honours the variable on an ordinary
+# desktop. Neither the app nor this script can put the switch back, and hard-wiring
+# a debugging port into a shipped binary is not a trade anyone should make.
+#
+# So -NoDevtools is the caller saying "this machine cannot give me a port". The
+# Win32 and log assertions still run and still gate the release; the run then ends
+# early and names what it could not look at, which is the one outcome that is
+# neither a false pass nor a failure pinned on the wrong thing.
+$noCdp = $false
+$pairs = @()
+if ($targets.Count -lt 1 -and $NoDevtools) {
+    Info 'no debugging target appeared, and -NoDevtools was passed: reading that as this machine, not this build'
+    Show-LaunchDiagnostics
+    $noCdp = $true
+}
+else {
+    Check ($targets.Count -ge 2) "both webviews exposed a CDP target ($($targets.Count) found)"
+    if ($targets.Count -lt 1) { Show-LaunchDiagnostics; exit 1 }
+    $targets | ForEach-Object { Info "target   $($_.url)" }
 
-$ballTarget  = $targets |
-    Where-Object { $_.url -like 'http*' -and $_.url -notlike '*panel.html*' } | Select-Object -First 1
-$panelTarget = $targets | Where-Object { $_.url -like '*panel.html*' } | Select-Object -First 1
-Check ($null -ne $ballTarget)  "mascot document is loaded"
-Check ($null -ne $panelTarget) "notebook document is loaded"
-if (-not $ballTarget -or -not $panelTarget) { exit 1 }
+    $ballTarget = $targets |
+        Where-Object { $_.url -like 'http*' -and $_.url -notlike '*panel.html*' } | Select-Object -First 1
+    $panelTarget = $targets | Where-Object { $_.url -like '*panel.html*' } | Select-Object -First 1
+    Check ($null -ne $ballTarget)  "mascot document is loaded"
+    Check ($null -ne $panelTarget) "notebook document is loaded"
+    if (-not $ballTarget -or -not $panelTarget) { exit 1 }
 
-$ballWs  = Connect-Cdp $ballTarget.webSocketDebuggerUrl
-$panelWs = Connect-Cdp $panelTarget.webSocketDebuggerUrl
+    $ballWs = Connect-Cdp $ballTarget.webSocketDebuggerUrl
+    $panelWs = Connect-Cdp $panelTarget.webSocketDebuggerUrl
+    $pairs = @(@{ n = 'mascot'; ws = $ballWs }, @{ n = 'notebook'; ws = $panelWs })
+}
 
 # One round trip per window, so a slow first paint cannot desynchronise the
-# assertions.
+# assertions. Empty on a -NoDevtools run, so the loop simply does not execute.
 $probeJs = @'
 JSON.stringify({
   href:   location.href,
@@ -525,7 +558,7 @@ JSON.stringify({
   errors: (window.__jotterErrors || []).slice(0, 5)
 })
 '@
-foreach ($pair in @(@{ n = 'mascot'; ws = $ballWs }, @{ n = 'notebook'; ws = $panelWs })) {
+foreach ($pair in $pairs) {
     $p = (Invoke-Js $pair.ws $probeJs) | ConvertFrom-Json
     Info "$($pair.n): $($p.href) — $($p.app) bytes, $($p.nodes) nodes, ipc=$($p.ipc)"
     # tauri.localhost is the custom protocol serving the embedded bundle. A dev
@@ -583,6 +616,53 @@ $inWork = ($ball.X -ge $work.X) -and ($ball.Y -ge $work.Y) -and
           (($ball.X + $ball.W) -le ($work.X + $work.Width)) -and
           (($ball.Y + $ball.H) -le ($work.Y + $work.Height))
 Check $inWork "mascot sits inside the work area (clear of the taskbar)"
+
+# --------------------------------------------------------------------- the end
+# Every run finishes the same way — read the log, put the desktop back, give a
+# verdict — but a -NoDevtools run finishes here rather than at the bottom of the
+# file, so the tail lives in a function above both of its callers.
+function Complete-Run {
+    if (Test-Path $logPath) {
+        $fresh = @(Get-Content $logPath -Encoding UTF8 | Select-Object -Skip $logLinesBefore)
+        $errors = @($fresh | Where-Object { $_ -match 'ERROR' })
+        Check ($errors.Count -eq 0) "no ERROR lines logged during this run"
+        $errors | ForEach-Object { Info "  $_" }
+        Info "--- tail $logPath ---"
+        ($fresh | Where-Object { $_ } | Select-Object -Last 10) | ForEach-Object { Info "  $_" }
+    }
+
+    if ($cursorHome -and ($cursorHome.X -or $cursorHome.Y)) {
+        [W32]::SetCursorPos($cursorHome.X, $cursorHome.Y) | Out-Null
+    }
+
+    if ($Stop) { Get-Process Jotter -ErrorAction SilentlyContinue | Stop-Process -Force }
+    else { Info "widget left running (pass -Stop to close it)" }
+
+    Measure-HumanInput
+    Write-Host ""
+    $disturbed = ($script:HumanPresses -gt 0) -or ($script:PointerNudges -gt 0)
+    if ($disturbed) {
+        Info ("someone else was using this desktop during the run: $script:HumanPresses real mouse " +
+            "press(es), pointer moved off its parking spot $script:PointerNudges time(s)")
+        Info ('a real click toggles the notebook and a real drag moves the mascot, so treat the ' +
+            'assertions above as inconclusive and re-run on an idle desktop before calling anything a regression')
+    }
+    if ($script:Failures -eq 0) { Write-Host "ACCEPTANCE PASS"; exit 0 }
+    if ($disturbed) { Write-Host "ACCEPTANCE FAIL ($script:Failures assertion(s)) — on a disturbed desktop"; exit 1 }
+    Write-Host "ACCEPTANCE FAIL ($script:Failures assertion(s))"
+    exit 1
+}
+
+# Said plainly, and in the same words every time, so a green CI run is never
+# mistaken for the full suite. Everything below this point drives the widget
+# through the debugging port; the desktop run in README covers it.
+if ($noCdp) {
+    Info 'not asserted, for want of a debugging port: embedded-bundle load, mounted content, IPC bridge and frontend errors'
+    Info 'not asserted, for want of a debugging port: click opens the notebook beside the mascot, second click puts it away'
+    Info 'not asserted, for want of a debugging port: drag moves both windows and persists the position, editor caret focus'
+    Info 'not asserted, for want of a debugging port: badge updates across windows, pixel compositing, idle cpu budget'
+    Complete-Run
+}
 
 # ---------------------------------------------------------------- interaction
 # The physical pointer is part of this test's environment whether the harness
@@ -925,33 +1005,5 @@ else {
     }
 }
 
-# ----------------------------------------------------------------------- logs
-if (Test-Path $logPath) {
-    $fresh = @(Get-Content $logPath -Encoding UTF8 | Select-Object -Skip $logLinesBefore)
-    $errors = @($fresh | Where-Object { $_ -match 'ERROR' })
-    Check ($errors.Count -eq 0) "no ERROR lines logged during this run"
-    $errors | ForEach-Object { Info "  $_" }
-    Info "--- tail $logPath ---"
-    ($fresh | Where-Object { $_ } | Select-Object -Last 10) | ForEach-Object { Info "  $_" }
-}
-
-if ($cursorHome -and ($cursorHome.X -or $cursorHome.Y)) {
-    [W32]::SetCursorPos($cursorHome.X, $cursorHome.Y) | Out-Null
-}
-
-if ($Stop) { Get-Process Jotter -ErrorAction SilentlyContinue | Stop-Process -Force }
-else { Info "widget left running (pass -Stop to close it)" }
-
-Measure-HumanInput
-Write-Host ""
-$disturbed = ($script:HumanPresses -gt 0) -or ($script:PointerNudges -gt 0)
-if ($disturbed) {
-    Info ("someone else was using this desktop during the run: $script:HumanPresses real mouse " +
-        "press(es), pointer moved off its parking spot $script:PointerNudges time(s)")
-    Info ('a real click toggles the notebook and a real drag moves the mascot, so treat the ' +
-        'assertions above as inconclusive and re-run on an idle desktop before calling anything a regression')
-}
-if ($script:Failures -eq 0) { Write-Host "ACCEPTANCE PASS"; exit 0 }
-if ($disturbed) { Write-Host "ACCEPTANCE FAIL ($script:Failures assertion(s)) — on a disturbed desktop"; exit 1 }
-Write-Host "ACCEPTANCE FAIL ($script:Failures assertion(s))"
-exit 1
+# ------------------------------------------------------------------- logs, end
+Complete-Run

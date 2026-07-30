@@ -211,9 +211,18 @@ powershell -ExecutionPolicy Bypass -File scripts\acceptance.ps1 -Exe .\Jotter.ex
 | 屏幕截取像素差                      | 遮/显同一矩形对比：透明置顶窗口即使什么都没画，对所有 API 也仍然"健康"                                                               |
 | `getAnimations()` + 进程树 CPU 时间 | 两个文档都没有无限迭代的动画，且空闲 CPU 低于预算——上面那个 46% 的缺陷通过了其余所有断言                                             |
 
-CI 里加 `-SkipPixel -SkipCpu`：runner 没有桌面可截，共享两核上的「单核百分比」量的是邻居；
-「不允许无限动画」这条不依赖机器，两边都断言。空闲 CPU 也不看绝对值，而是和「同一进程把所有
-动画停掉」的地板做差——绝对值量的是那台机器忙不忙，差值才是小猫自己动的代价。
+空闲 CPU 不看绝对值，而是和「同一进程把所有动画停掉」的地板做差——绝对值量的是那台机器忙不
+忙，差值才是小猫自己动的代价。
+
+**这张表整张只在桌面上跑得全**，因此发布前请在本机跑一次完整验收。CI 里加的是
+`-SkipPixel -SkipCpu -NoDevtools`，能问的比看上去少：runner 没有桌面可截；共享两核上的
+「单核百分比」量的是邻居；而 GitHub `windows-latest` 的作业以管理员身份运行，那里的 WebView2
+加载器会把 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 整条丢掉——浏览器进程只带着 app 自己的
+`AdditionalBrowserArguments` 起来，调试端口从来没有人监听（在 runner 上实测：没有任何 Edge
+策略参与，同一个 CI 产物在普通桌面上照样认这个变量）。把调试端口写进出厂配置换取 CI 绿灯，
+不是一笔该做的交易。所以 CI 只断言 runner 能诚实回答的部分：exe 起得来、两个窗口都在且几何
+正确、置顶、本子默认藏着、日志里没有 ERROR；跑完会把每一条**没能**断言的检查按名字打印出来，
+绿灯不会被误读成「全测过了」。
 
 本地跑请让桌面闲着：它驱动的就是你眼前那只小猫——一次真实点击会把本子收起，一次真实拖动会把
 小猫挪走，后面每条开合断言都跟着翻转。脚本因此把指针停到离挂件最远的角上，被挪走会挪回（最多
@@ -231,8 +240,9 @@ git tag v0.1.0 && git push origin v0.1.0
 ```
 
 [CI](.github/workflows/ci.yml) 会在 Windows runner 上构建安装包与免安装 exe，
-**先跑一遍上面的验收**，然后才用 `gh release create` 把两个文件挂到该标签的 Release 上——
-所以不存在"发出去了但没人启动过"的产物。版本号取自 `package.json` / `tauri.conf.json` /
+**先跑一遍验收里 runner 能跑的部分**（`-NoDevtools`，见上），然后才用 `gh release create`
+把两个文件挂到该标签的 Release 上——所以不存在"发出去了但没人启动过"的产物；
+需要真实指针与像素的那几条，在打标签前由本机的完整验收兜住。版本号取自 `package.json` / `tauri.conf.json` /
 `Cargo.toml`，三处要一致。
 
 ## 数据存放
