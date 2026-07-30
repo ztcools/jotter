@@ -1,0 +1,167 @@
+/*
+ * Design tokens and global reset.
+ *
+ * The window itself is transparent and undecorated, so every visible edge,
+ * corner and shadow in this app is CSS. Two consequences shape the rules below:
+ * `html`/`body` must stay fully transparent, and each root surface reserves a
+ * margin (`--bleed`) for its own drop shadow to render into.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Transparent gutter that drop shadows bleed into. */
+  --bleed: 8px;
+
+  --r-panel: 20px;
+  --r-card: 13px;
+  --r-pill: 999px;
+
+  --ease: cubic-bezier(0.22, 0.8, 0.28, 1);
+  --dur: 170ms;
+  --dur-fast: 110ms;
+
+  --accent: #6366f1;
+  --accent-2: #8b5cf6;
+  --danger: #e5484d;
+
+  /* Card accent palette, indexed by `Card.accent`. */
+  --a0: #6366f1;
+  --a1: #8b5cf6;
+  --a2: #0ea5e9;
+  --a3: #10b981;
+  --a4: #f59e0b;
+  --a5: #f43f5e;
+
+  --surface: rgba(255, 255, 255, 0.93);
+  --surface-sunken: rgba(112, 112, 140, 0.07);
+  --surface-hover: rgba(112, 112, 140, 0.1);
+  --hairline: rgba(24, 24, 48, 0.08);
+  --hairline-strong: rgba(24, 24, 48, 0.14);
+
+  --text: #22222c;
+  --text-dim: #6b6b7c;
+  --text-faint: #a2a2b2;
+
+  --shadow-panel: 0 12px 32px rgba(20, 20, 45, 0.18), 0 2px 8px rgba(20, 20, 45, 0.08);
+  --shadow-ball: 0 6px 18px rgba(60, 50, 160, 0.32), 0 1px 3px rgba(20, 20, 45, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: rgba(28, 28, 36, 0.95);
+    --surface-sunken: rgba(255, 255, 255, 0.06);
+    --surface-hover: rgba(255, 255, 255, 0.1);
+    --hairline: rgba(255, 255, 255, 0.09);
+    --hairline-strong: rgba(255, 255, 255, 0.16);
+
+    --text: #ececf2;
+    --text-dim: #a0a0b0;
+    --text-faint: #6d6d7d;
+
+    --shadow-panel: 0 14px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-ball: 0 6px 20px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  font-family:
+    system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI',
+    'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  /* Chrome-less window: text selection only where it is useful. */
+  user-select: none;
+  cursor: default;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+  user-select: text;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: var(--r-pill);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Thin, self-effacing scrollbars — the panel is small and the content short. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--hairline-strong);
+  border-radius: var(--r-pill);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}

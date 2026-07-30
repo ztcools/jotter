@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  Visual review harness. Serves the real components against a stubbed IPC layer
+  so the UI can be opened in a plain browser (and screenshotted in CI or by
+  hand) without building the Rust side.
+
+  Vite's production build only picks up index.html, so this never ships.
+  Usage: pnpm dev, then http://localhost:1420/preview.html?state=panel
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jotter — preview</title>
+  </head>
+  <body>
+    <!-- Stand-in for the desktop wallpaper: the window itself is transparent, so
+         without something behind it the rounded corners and drop shadow are
+         invisible in a screenshot. -->
+    <div class="desk"></div>
+    <div id="app"></div>
+    <style>
+      .desk {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        background: linear-gradient(135deg, #dfe7f3 0%, #eef0f6 55%, #e7dfef 100%);
+      }
+      @media (prefers-color-scheme: dark) {
+        .desk {
+          background: linear-gradient(135deg, #1b2030 0%, #171922 55%, #241f2e 100%);
+        }
+      }
+    </style>
+    <script type="module" src="/src/preview.ts"></script>
+  </body>
+</html>
