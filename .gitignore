@@ -1,0 +1,17 @@
+# build output
+/dist/
+/dist-win/
+/src-tauri/target/
+/src-tauri/gen/
+
+# dependencies
+/node_modules/
+
+# editors / os
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# local runtime data (only present if the app is ever run from the repo)
+*.log

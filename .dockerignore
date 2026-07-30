@@ -1,0 +1,10 @@
+.git
+.github
+node_modules
+dist
+dist-win
+src-tauri/target
+src-tauri/gen
+target
+*.log
+README.md
