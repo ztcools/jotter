@@ -3,7 +3,7 @@
   import { save } from '@tauri-apps/plugin-dialog';
   import Icon from './Icon.svelte';
   import * as ipc from '../lib/ipc';
-  import { allCardsToMarkdown, cardToMarkdown, exportFilename } from '../lib/markdown';
+  import { allCardsToMarkdown, cardToMarkdown, cardToPlainText, exportFilename } from '../lib/markdown';
   import { toasts, workspace } from '../lib/store.svelte';
 
   let busy = $state(false);
@@ -12,8 +12,8 @@
     const card = workspace.active;
     if (!card) return;
     try {
-      await ipc.copyText(cardToMarkdown(card));
-      toasts.show(`已复制「${card.title}」${card.items.length} 条`);
+      await ipc.copyText(cardToPlainText(card));
+      toasts.show(`已复制「${card.title}」${card.items.length} 条（纯文本）`);
     } catch (err) {
       toasts.show(`复制失败：${String(err)}`, 'error');
     }
@@ -56,7 +56,7 @@
 </script>
 
 <footer class="bar">
-  <button class="act" onclick={copy} title="复制为 Markdown 清单">
+  <button class="act" onclick={copy} title="复制为纯文本">
     <Icon name="copy" />
     <span>复制</span>
   </button>

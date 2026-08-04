@@ -92,12 +92,37 @@
   function onContextMenu(event: MouseEvent) {
     if (!(event.target as HTMLElement).closest('input, textarea')) event.preventDefault();
   }
+
+  /** When an image is pasted anywhere on the panel outside of a text field,
+   * create a new image-only item on the active card. Text fields handle their
+   * own paste events (the Composer submits text + image together). */
+  async function onPaste(event: ClipboardEvent) {
+    const target = event.target as HTMLElement;
+    if (target.closest('input, textarea')) return;
+    const dt = event.clipboardData;
+    if (!dt) return;
+    for (let i = 0; i < dt.items.length; i++) {
+      const clipItem = dt.items[i];
+      if (!clipItem || !clipItem.type.startsWith('image/')) continue;
+      event.preventDefault();
+      const blob = clipItem.getAsFile();
+      if (!blob) continue;
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+      await workspace.addItem('', [dataUrl]);
+      return;
+    }
+  }
 </script>
 
 <svelte:window
   onkeydown={onKeydown}
   oncontextmenu={onContextMenu}
   onpointerdown={onWindowPointerDown}
+  onpaste={onPaste}
 />
 
 <div class="stage">

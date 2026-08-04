@@ -16,7 +16,14 @@ export const deleteCard = (cardId: string) => invoke<Workspace>('delete_card', {
 
 export const setActiveCard = (cardId: string) => invoke<void>('set_active_card', { cardId });
 
-export const addItem = (cardId: string, text: string) => invoke<Item>('add_item', { cardId, text });
+export const addItem = (cardId: string, text?: string, images?: string[]) =>
+  invoke<Item>('add_item', { cardId, text, images });
+
+export const addItemImage = (cardId: string, itemId: string, imageData: string) =>
+  invoke<string>('add_item_image', { cardId, itemId, imageData });
+
+export const getItemImages = (paths: string[]) =>
+  invoke<string[]>('get_item_images', { paths });
 
 export const updateItem = (
   cardId: string,

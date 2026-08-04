@@ -13,6 +13,15 @@ const stamp = (ms: number) =>
     minute: '2-digit',
   });
 
+/** Plain text — one line per item, no card title, no timestamp, no Markdown.
+ *  Used for clipboard copy so the user can paste straight into an agent chat. */
+export function cardToPlainText(card: Card): string {
+  return card.items
+    .map((item) => item.text)
+    .filter((t) => t.length > 0)
+    .join('\n');
+}
+
 /** GitHub-flavoured task list — pastes cleanly into an issue or a PR comment. */
 export function cardToMarkdown(card: Card): string {
   const lines = [`## ${card.title}`, '', `_${stamp(card.updatedAt)}_`, ''];

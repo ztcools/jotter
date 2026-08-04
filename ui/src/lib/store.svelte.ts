@@ -65,7 +65,38 @@ class WorkspaceState {
     this.cards = res.value.cards;
     this.activeId = res.value.activeCardId;
     this.pinned = res.value.pinned;
+    // Convert on-disk image paths to data URLs the webview can display.
+    await this.#loadImages();
     this.ready = true;
+  }
+
+  /** Collects every image path across all cards and fetches them in one batch. */
+  async #loadImages() {
+    const allPaths: { cardId: string; itemId: string; paths: string[] }[] = [];
+    for (const card of this.cards) {
+      for (const item of card.items) {
+        if (item.images.length > 0) {
+          allPaths.push({ cardId: card.id, itemId: item.id, paths: [...item.images] });
+        }
+      }
+    }
+    const flat = allPaths.flatMap((e) => e.paths);
+    if (flat.length === 0) return;
+
+    const res = await guard(() => ipc.getItemImages(flat), '加载图片失败');
+    if (!res.ok) return;
+    const urls = res.value;
+    let cursor = 0;
+    for (const entry of allPaths) {
+      const card = this.cards.find((c) => c.id === entry.cardId);
+      const item = card?.items.find((i) => i.id === entry.itemId);
+      if (!item) {
+        cursor += entry.paths.length;
+        continue;
+      }
+      item.images = urls.slice(cursor, cursor + entry.paths.length);
+      cursor += entry.paths.length;
+    }
   }
 
   // ------------------------------------------------------------------- cards
@@ -114,12 +145,34 @@ class WorkspaceState {
 
   /** Reports whether the line landed, so the composer can keep the text on the
    * screen instead of swallowing it when the write fails. */
-  async addItem(text: string): Promise<boolean> {
+  async addItem(text: string, images?: string[]): Promise<boolean> {
     const card = this.active;
     const value = text.trim();
-    if (!card || !value) return false;
-    const res = await guard(() => ipc.addItem(card.id, value), '记录失败');
-    if (res.ok) card.items.push(res.value);
+    const hasImages = images && images.length > 0;
+    if (!card || (!value && !hasImages)) return false;
+    const res = await guard(
+      () => ipc.addItem(card.id, value || undefined, images),
+      '记录失败',
+    );
+    if (res.ok) {
+      // Images arrive back as data URLs (the Rust side saved them to disk and
+      // the store layer converted the paths for display).
+      const item = res.value;
+      if (images && images.length > 0) item.images = images;
+      card.items.push(item);
+    }
+    return res.ok;
+  }
+
+  /** Appends a pasted image to an existing item. */
+  async addItemImage(item: Item, imageData: string): Promise<boolean> {
+    const card = this.active;
+    if (!card) return false;
+    const res = await guard(
+      () => ipc.addItemImage(card.id, item.id, imageData),
+      '添加图片失败',
+    );
+    if (res.ok) item.images.push(imageData);
     return res.ok;
   }
 

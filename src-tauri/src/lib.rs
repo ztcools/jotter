@@ -60,13 +60,16 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            let path = app.path().app_data_dir()?.join(WORKSPACE_FILE);
+            let data_dir = app.path().app_data_dir()?;
+            let path = data_dir.join(WORKSPACE_FILE);
+            let images_dir = data_dir.join("images");
             log::info!("workspace: {}", path.display());
             // Every mutation, from any source, pushes the open-item count to the
             // mascot's badge through this hook.
             let notify = handle.clone();
             app.manage(Store::load(
                 path,
+                images_dir,
                 Box::new(move |open| {
                     let _ = notify.emit("badge", open);
                 }),
@@ -157,6 +160,8 @@ pub fn run() {
             commands::update_item,
             commands::delete_item,
             commands::clear_done,
+            commands::add_item_image,
+            commands::get_item_images,
             commands::copy_text,
             commands::write_text_file,
             commands::toggle_panel,

@@ -20,13 +20,24 @@ fn new_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
 
-/// A single jotted-down issue. Deliberately one line of text — this app is for
-/// capture, not for prose.
+/// Longest single jotted line we accept. Generous for prose descriptions that
+/// accompany a screenshot, tight enough that a runaway paste cannot bloat the
+/// workspace document.
+pub const MAX_ITEM_LEN: usize = 10_000;
+
+/// A single jotted-down note: a line of text, optionally accompanied by one or
+/// more pasted screenshots. Either `text` or at least one image must be present.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
     pub id: String,
+    #[serde(default)]
     pub text: String,
+    /// Relative paths to saved images, e.g. `"images/abc123.png"`. Stored as
+    /// files alongside the workspace JSON so that toggling a checkbox does not
+    /// rewrite every pasted screenshot.
+    #[serde(default)]
+    pub images: Vec<String>,
     #[serde(default)]
     pub done: bool,
     pub created_at: i64,
@@ -37,6 +48,7 @@ impl Item {
         Self {
             id: new_id(),
             text,
+            images: Vec::new(),
             done: false,
             created_at: now_ms(),
         }

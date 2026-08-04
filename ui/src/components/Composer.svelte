@@ -63,6 +63,30 @@
       void submit();
     }
   }
+
+  /** When an image is pasted while the composer has the caret, submit the current
+   * text together with the image as a single item. A plain-text paste is left to
+   * the browser's default behaviour. */
+  async function onPaste(event: ClipboardEvent) {
+    const dt = event.clipboardData;
+    if (!dt) return;
+    for (let i = 0; i < dt.items.length; i++) {
+      const item = dt.items[i];
+      if (!item || !item.type.startsWith('image/')) continue;
+      event.preventDefault();
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+      const text = value.trim();
+      value = '';
+      if (!(await workspace.addItem(text, [dataUrl]))) value = text;
+      return;
+    }
+  }
 </script>
 
 <!-- Coming back to a pinned notebook (Alt-Tab, or a click on its chrome) should
@@ -74,7 +98,8 @@
     bind:this={field}
     bind:value
     onkeydown={onKeydown}
-    maxlength="500"
+    onpaste={onPaste}
+    maxlength="10000"
     placeholder="记一个问题…"
     aria-label="记一个问题"
   />

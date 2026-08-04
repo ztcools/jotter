@@ -17,6 +17,7 @@ const seed = (title: string, accent: number, lines: Array<[string, boolean]>): C
   items: lines.map<Item>(([text, done], i) => ({
     id: `${accent}-${i}`,
     text,
+    images: [],
     done,
     createdAt: Date.now(),
   })),
@@ -60,7 +61,8 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
     case 'add_item': {
       const item: Item = {
         id: `i-${nextId++}`,
-        text: args.text as string,
+        text: (args.text as string) ?? '',
+        images: [],
         done: false,
         createdAt: Date.now(),
       };

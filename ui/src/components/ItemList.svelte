@@ -60,15 +60,19 @@
           <input
             class="edit"
             value={item.text}
-            maxlength="500"
+            maxlength="10000"
             autofocus
             onblur={(e) => commitEdit(item, e)}
             onkeydown={onEditKey}
           />
         {:else}
-          <button class="text" onclick={() => (editingId = item.id)} title="点击修改">
-            {item.text}
-          </button>
+          {#if item.text}
+            <button class="text" onclick={() => (editingId = item.id)} title="点击修改">
+              {item.text}
+            </button>
+          {:else}
+            <span class="text placeholder" aria-hidden="true">图片</span>
+          {/if}
           <button
             class="kill"
             onclick={() => workspace.removeItem(item)}
@@ -79,6 +83,14 @@
           </button>
         {/if}
       </div>
+
+      {#if item.images.length > 0}
+        <div class="thumbs">
+          {#each item.images as src (src)}
+            <img class="thumb" {src} alt="粘贴的截图" loading="lazy" />
+          {/each}
+        </div>
+      {/if}
     {/each}
   {/if}
 </div>
@@ -206,5 +218,27 @@
   .kill:hover {
     color: var(--danger);
     background: color-mix(in oklab, var(--danger) 14%, transparent);
+  }
+
+  .placeholder {
+    font-style: italic;
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 0 4px 29px;
+  }
+
+  .thumb {
+    max-width: 100%;
+    max-height: 180px;
+    border-radius: 9px;
+    box-shadow: 0 1px 4px rgba(20, 20, 45, 0.14);
+    object-fit: contain;
+    background: var(--surface-sunken);
   }
 </style>
