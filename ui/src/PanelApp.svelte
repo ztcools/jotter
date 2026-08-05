@@ -20,6 +20,7 @@
   import { pressToDrag } from './lib/drag';
   import * as ipc from './lib/ipc';
   import { pendingImages, workspace } from './lib/store.svelte';
+  import { readImagesFromClipboard } from './lib/paste';
 
   let menuOpen = $state(false);
 
@@ -94,27 +95,13 @@
   }
 
   /** When an image is pasted anywhere on the panel outside of a text field,
-   * queue it alongside any images already waiting in the composer — the user
-   * can then type more text and press Enter to submit everything at once. */
+   * queue every image alongside any already waiting in the composer — the
+   * user can then type text and press Enter to submit everything at once. */
   async function onPaste(event: ClipboardEvent) {
     const target = event.target as HTMLElement;
     if (target.closest('input, textarea')) return;
-    const dt = event.clipboardData;
-    if (!dt) return;
-    for (let i = 0; i < dt.items.length; i++) {
-      const clipItem = dt.items[i];
-      if (!clipItem || !clipItem.type.startsWith('image/')) continue;
-      event.preventDefault();
-      const blob = clipItem.getAsFile();
-      if (!blob) continue;
-      const dataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-      pendingImages.push(dataUrl);
-      return;
-    }
+    const urls = await readImagesFromClipboard(event);
+    for (const u of urls) pendingImages.push(u);
   }
 </script>
 

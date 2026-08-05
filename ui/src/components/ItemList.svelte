@@ -44,35 +44,46 @@
     </p>
   {:else}
     {#each workspace.items as item (item.id)}
-      <div class="row" class:done={item.done}>
-        <button
-          class="tick"
-          onclick={() => workspace.toggleItem(item)}
-          title={item.done ? '标为未解决' : '标为已解决'}
-          aria-label={item.done ? '标为未解决' : '标为已解决'}
-          aria-pressed={item.done}
-        >
-          {#if item.done}<Icon name="check" size={11} />{/if}
-        </button>
+      <div class="item-block" class:done={item.done}>
+        <!-- Images row always on top -->
+        {#if item.images.length > 0}
+          <div class="thumbs">
+            {#each item.images as src (src)}
+              <img class="thumb" {src} alt="截图" loading="lazy" />
+            {/each}
+          </div>
+        {/if}
 
-        {#if editingId === item.id}
-          <!-- svelte-ignore a11y_autofocus -->
-          <input
-            class="edit"
-            value={item.text}
-            maxlength="10000"
-            autofocus
-            onblur={(e) => commitEdit(item, e)}
-            onkeydown={onEditKey}
-          />
-        {:else}
-          {#if item.text}
+        <!-- Text row below images -->
+        <div class="row">
+          <button
+            class="tick"
+            onclick={() => workspace.toggleItem(item)}
+            title={item.done ? '标为未解决' : '标为已解决'}
+            aria-label={item.done ? '标为未解决' : '标为已解决'}
+            aria-pressed={item.done}
+          >
+            {#if item.done}<Icon name="check" size={11} />{/if}
+          </button>
+
+          {#if editingId === item.id}
+            <!-- svelte-ignore a11y_autofocus -->
+            <input
+              class="edit"
+              value={item.text}
+              maxlength="10000"
+              autofocus
+              onblur={(e) => commitEdit(item, e)}
+              onkeydown={onEditKey}
+            />
+          {:else if item.text}
             <button class="text" onclick={() => (editingId = item.id)} title="点击修改">
               {item.text}
             </button>
           {:else}
-            <span class="text placeholder" aria-hidden="true">图片</span>
+            <span class="text placeholder" aria-hidden="true"></span>
           {/if}
+
           <button
             class="kill"
             onclick={() => workspace.removeItem(item)}
@@ -81,16 +92,8 @@
           >
             <Icon name="x" size={12} />
           </button>
-        {/if}
-      </div>
-
-      {#if item.images.length > 0}
-        <div class="thumbs">
-          {#each item.images as src (src)}
-            <img class="thumb" {src} alt="粘贴的截图" loading="lazy" />
-          {/each}
         </div>
-      {/if}
+      </div>
     {/each}
   {/if}
 </div>
@@ -131,17 +134,20 @@
     color: var(--text-faint);
   }
 
-  .row {
-    display: flex;
-    align-items: flex-start;
-    gap: 7px;
-    padding: 5px 4px 5px 6px;
+  .item-block {
+    padding: 3px 4px 4px 6px;
     border-radius: var(--r-card);
     transition: background-color var(--dur-fast) var(--ease);
   }
 
-  .row:hover {
+  .item-block:hover {
     background: var(--surface-sunken);
+  }
+
+  .row {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
   }
 
   .tick {
@@ -161,7 +167,7 @@
     box-shadow: inset 0 0 0 1.5px var(--accent);
   }
 
-  .row.done .tick {
+  .item-block.done .tick {
     background: linear-gradient(140deg, var(--accent), var(--accent-2));
     box-shadow: none;
   }
@@ -184,7 +190,7 @@
     transform: none;
   }
 
-  .row.done .text {
+  .item-block.done .text {
     color: var(--text-faint);
     text-decoration: line-through;
     text-decoration-color: var(--text-faint);
@@ -211,7 +217,7 @@
     transition: opacity var(--dur-fast) var(--ease);
   }
 
-  .row:hover .kill {
+  .item-block:hover .kill {
     opacity: 1;
   }
 
@@ -230,7 +236,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    padding: 0 0 2px 29px;
+    padding-bottom: 2px;
   }
 
   .thumb {
@@ -238,7 +244,7 @@
     max-height: 48px;
     border-radius: 6px;
     box-shadow: 0 1px 3px rgba(20, 20, 45, 0.12);
-    object-fit: contain;
+    object-fit: cover;
     background: var(--surface-sunken);
   }
 </style>

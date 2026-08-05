@@ -5,6 +5,7 @@
   import { listen } from '@tauri-apps/api/event';
   import Icon from './Icon.svelte';
   import { pendingImages, workspace } from '../lib/store.svelte';
+  import { readImagesFromClipboard } from '../lib/paste';
 
   let value = $state('');
   let field = $state<HTMLInputElement | null>(null);
@@ -77,25 +78,12 @@
     }
   }
 
-  /** Image paste inside the composer: queue the image rather than submitting
-   * immediately, so the user can type more text before and after it. */
+  /** Image paste inside the composer: every image in the paste goes into the
+   * pending queue so the user can type more text before and after them. Only
+   * Enter (or the + button) submits. */
   async function onPaste(event: ClipboardEvent) {
-    const dt = event.clipboardData;
-    if (!dt) return;
-    for (let i = 0; i < dt.items.length; i++) {
-      const item = dt.items[i];
-      if (!item || !item.type.startsWith('image/')) continue;
-      event.preventDefault();
-      const blob = item.getAsFile();
-      if (!blob) continue;
-      const dataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-      pendingImages.push(dataUrl);
-      return;
-    }
+    const urls = await readImagesFromClipboard(event);
+    for (const u of urls) pendingImages.push(u);
   }
 </script>
 
