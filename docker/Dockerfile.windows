@@ -58,11 +58,16 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
+# Bust with `--build-arg CACHEBUST=$(date +%s)` to guarantee `pnpm build` and
+# `cargo build` re-run even when source files hash identically across filesystem
+# boundaries (notably WSL↔Windows DrvFs).
+ARG CACHEBUST=0
+
 COPY . .
 
-# tauri-build embeds ../dist, so the frontend has to exist before cargo runs —
+# tauri-build embeds ../dist, so the frontend has to exist before cargo runs -
 # for `cargo clippy` just as much as for the real build.
-RUN pnpm build
+RUN echo "bust:${CACHEBUST}" && pnpm build
 
 # Formatting and lints, in the one place with a Rust toolchain. Kept as a stage
 # of its own so `make windows` never pays for it, and so a lint failure is a

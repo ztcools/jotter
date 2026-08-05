@@ -50,6 +50,7 @@ windows: ## Cross-compile the portable Windows .exe inside Docker
 		--target artifact \
 		--output type=local,dest=$(OUT_DIR) \
 		--tag $(IMAGE) \
+		--build-arg CACHEBUST="$$(date +%s)" \
 		.
 	@ls -lh $(OUT_DIR)/Jotter.exe
 

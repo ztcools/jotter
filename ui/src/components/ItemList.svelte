@@ -235,7 +235,7 @@
 
   .thumb {
     max-width: 100%;
-    max-height: 64px;
+    max-height: 48px;
     border-radius: 6px;
     box-shadow: 0 1px 3px rgba(20, 20, 45, 0.12);
     object-fit: contain;
