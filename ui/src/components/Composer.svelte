@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import Icon from './Icon.svelte';
-  import { workspace } from '../lib/store.svelte';
+  import { pendingImages, workspace } from '../lib/store.svelte';
 
   let value = $state('');
   let field = $state<HTMLInputElement | null>(null);
@@ -47,14 +47,27 @@
     field?.focus();
   });
 
+  // When the active card changes, discard any images queued for a different
+  // card — they would otherwise land on the wrong one.
+  $effect(() => {
+    void activeId;
+    pendingImages.clear();
+  });
+
   async function submit() {
     const text = value.trim();
-    if (!text) return;
+    const imgs = pendingImages.items.length > 0 ? pendingImages.items : undefined;
+    if (!text && !imgs) return;
     // Cleared up front so the next line can be typed straight away, and put
     // back if the write failed — losing a just-typed note is the one failure
     // this app cannot afford.
     value = '';
-    if (!(await workspace.addItem(text))) value = text;
+    pendingImages.clear();
+    if (!(await workspace.addItem(text, imgs))) {
+      value = text;
+      // Restoring data URLs on failure would risk writing the same bytes to
+      // disk again on the next attempt, so the queue stays empty.
+    }
   }
 
   function onKeydown(event: KeyboardEvent) {
@@ -64,9 +77,8 @@
     }
   }
 
-  /** When an image is pasted while the composer has the caret, submit the current
-   * text together with the image as a single item. A plain-text paste is left to
-   * the browser's default behaviour. */
+  /** Image paste inside the composer: queue the image rather than submitting
+   * immediately, so the user can type more text before and after it. */
   async function onPaste(event: ClipboardEvent) {
     const dt = event.clipboardData;
     if (!dt) return;
@@ -81,9 +93,7 @@
         reader.onload = () => resolve(reader.result as string);
         reader.readAsDataURL(blob);
       });
-      const text = value.trim();
-      value = '';
-      if (!(await workspace.addItem(text, [dataUrl]))) value = text;
+      pendingImages.push(dataUrl);
       return;
     }
   }
@@ -92,6 +102,25 @@
 <!-- Coming back to a pinned notebook (Alt-Tab, or a click on its chrome) should
      also leave the caret ready, not on `body`. -->
 <svelte:window onfocus={claimCaret} />
+
+{#if pendingImages.items.length > 0}
+  <div class="queue">
+    {#each pendingImages.items as src, index (src)}
+      <div class="chip">
+        <img {src} alt="待提交截图" />
+        <button
+          class="drop"
+          onclick={() => pendingImages.remove(index)}
+          title="移除此图片"
+          aria-label="移除此图片"
+        >
+          <Icon name="x" size={10} />
+        </button>
+      </div>
+    {/each}
+    <span class="hint">按 Enter 提交</span>
+  </div>
+{/if}
 
 <div class="composer" class:filled={value.length > 0}>
   <input
@@ -103,12 +132,71 @@
     placeholder="记一个问题…"
     aria-label="记一个问题"
   />
-  <button onclick={submit} disabled={value.trim().length === 0} title="添加（Enter）" aria-label="添加">
+  <button onclick={submit} disabled={value.trim().length === 0 && pendingImages.items.length === 0} title="添加（Enter）" aria-label="添加">
     <Icon name="plus" size={14} />
   </button>
 </div>
 
 <style>
+  .queue {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    padding: 4px 10px 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .queue::-webkit-scrollbar {
+    display: none;
+  }
+
+  .chip {
+    position: relative;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(20, 20, 45, 0.18);
+  }
+
+  .chip img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .drop {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(34, 34, 46, 0.78);
+    color: #fff;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+
+  .chip:hover .drop {
+    opacity: 1;
+  }
+
+  .drop:hover {
+    background: var(--danger);
+  }
+
+  .hint {
+    flex: none;
+    font-size: 10.5px;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+
   .composer {
     display: flex;
     align-items: center;

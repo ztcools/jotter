@@ -19,7 +19,7 @@
   import Toolbar from './components/Toolbar.svelte';
   import { pressToDrag } from './lib/drag';
   import * as ipc from './lib/ipc';
-  import { workspace } from './lib/store.svelte';
+  import { pendingImages, workspace } from './lib/store.svelte';
 
   let menuOpen = $state(false);
 
@@ -94,8 +94,8 @@
   }
 
   /** When an image is pasted anywhere on the panel outside of a text field,
-   * create a new image-only item on the active card. Text fields handle their
-   * own paste events (the Composer submits text + image together). */
+   * queue it alongside any images already waiting in the composer — the user
+   * can then type more text and press Enter to submit everything at once. */
   async function onPaste(event: ClipboardEvent) {
     const target = event.target as HTMLElement;
     if (target.closest('input, textarea')) return;
@@ -112,7 +112,7 @@
         reader.onload = () => resolve(reader.result as string);
         reader.readAsDataURL(blob);
       });
-      await workspace.addItem('', [dataUrl]);
+      pendingImages.push(dataUrl);
       return;
     }
   }

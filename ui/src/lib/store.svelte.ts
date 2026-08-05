@@ -26,6 +26,29 @@ class Toasts {
 
 export const toasts = new Toasts();
 
+/** Images queued for the next item submission. Shared between the Composer
+ * (paste while typing) and the panel-level paste handler (paste while the
+ * caret is elsewhere). All images in the queue are submitted together with
+ * the next line of text, so the user can intersperse screenshots between
+ * typed notes. */
+class PendingImages {
+  items = $state<string[]>([]);
+
+  push(dataUrl: string) {
+    this.items = [...this.items, dataUrl];
+  }
+
+  remove(index: number) {
+    this.items = this.items.filter((_, i) => i !== index);
+  }
+
+  clear() {
+    this.items = [];
+  }
+}
+
+export const pendingImages = new PendingImages();
+
 /** Outcome of a guarded call.
  *
  * Tagged rather than `T | undefined`: half the commands return nothing, so a
@@ -161,18 +184,6 @@ class WorkspaceState {
       if (images && images.length > 0) item.images = images;
       card.items.push(item);
     }
-    return res.ok;
-  }
-
-  /** Appends a pasted image to an existing item. */
-  async addItemImage(item: Item, imageData: string): Promise<boolean> {
-    const card = this.active;
-    if (!card) return false;
-    const res = await guard(
-      () => ipc.addItemImage(card.id, item.id, imageData),
-      '添加图片失败',
-    );
-    if (res.ok) item.images.push(imageData);
     return res.ok;
   }
 

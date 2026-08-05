@@ -22,6 +22,37 @@ export function cardToPlainText(card: Card): string {
     .join('\n');
 }
 
+/** HTML for rich-text clipboard — plain text lines interleaved with embedded
+ *  <img> tags so pasting into a chat window carries screenshots as well. */
+export function cardToHtml(card: Card): string {
+  const parts: string[] = [];
+  for (const item of card.items) {
+    if (item.text) {
+      parts.push(`<p>${escapeHtml(item.text)}</p>`);
+    }
+    for (const src of item.images) {
+      parts.push(`<img src="${escapeAttr(src)}" alt="截图" style="max-width:100%" />`);
+    }
+  }
+  return parts.join('\n');
+}
+
+/** Returns true if any item in the card has an image. */
+export function cardHasImages(card: Card): boolean {
+  return card.items.some((item) => item.images.length > 0);
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeAttr(s: string): string {
+  return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
 /** GitHub-flavoured task list — pastes cleanly into an issue or a PR comment. */
 export function cardToMarkdown(card: Card): string {
   const lines = [`## ${card.title}`, '', `_${stamp(card.updatedAt)}_`, ''];

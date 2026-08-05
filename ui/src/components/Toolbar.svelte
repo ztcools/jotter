@@ -3,7 +3,7 @@
   import { save } from '@tauri-apps/plugin-dialog';
   import Icon from './Icon.svelte';
   import * as ipc from '../lib/ipc';
-  import { allCardsToMarkdown, cardToMarkdown, cardToPlainText, exportFilename } from '../lib/markdown';
+  import { allCardsToMarkdown, cardHasImages, cardToHtml, cardToMarkdown, cardToPlainText, exportFilename } from '../lib/markdown';
   import { toasts, workspace } from '../lib/store.svelte';
 
   let busy = $state(false);
@@ -12,8 +12,22 @@
     const card = workspace.active;
     if (!card) return;
     try {
-      await ipc.copyText(cardToPlainText(card));
-      toasts.show(`已复制「${card.title}」${card.items.length} 条（纯文本）`);
+      const plain = cardToPlainText(card);
+      if (cardHasImages(card)) {
+        // Mixed text + images: use the web Clipboard API so pasting into a
+        // chat window carries both.  The HTML variant is the primary payload;
+        // text/plain is the fallback for plain-text targets.
+        const html = cardToHtml(card);
+        const item = new ClipboardItem({
+          'text/plain': new Blob([plain], { type: 'text/plain' }),
+          'text/html': new Blob([html], { type: 'text/html' }),
+        });
+        await navigator.clipboard.write([item]);
+        toasts.show(`已复制「${card.title}」${card.items.length} 条（含图片）`);
+      } else {
+        await ipc.copyText(plain);
+        toasts.show(`已复制「${card.title}」${card.items.length} 条（纯文本）`);
+      }
     } catch (err) {
       toasts.show(`复制失败：${String(err)}`, 'error');
     }

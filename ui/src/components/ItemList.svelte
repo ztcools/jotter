@@ -229,15 +229,15 @@
   .thumbs {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    padding: 0 0 4px 29px;
+    gap: 4px;
+    padding: 0 0 2px 29px;
   }
 
   .thumb {
     max-width: 100%;
-    max-height: 180px;
-    border-radius: 9px;
-    box-shadow: 0 1px 4px rgba(20, 20, 45, 0.14);
+    max-height: 64px;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(20, 20, 45, 0.12);
     object-fit: contain;
     background: var(--surface-sunken);
   }
