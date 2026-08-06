@@ -244,7 +244,7 @@
     max-height: 48px;
     border-radius: 6px;
     box-shadow: 0 1px 3px rgba(20, 20, 45, 0.12);
-    object-fit: cover;
+    object-fit: contain;
     background: var(--surface-sunken);
   }
 </style>

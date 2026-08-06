@@ -26,29 +26,6 @@ class Toasts {
 
 export const toasts = new Toasts();
 
-/** Images queued for the next item submission. Shared between the Composer
- * (paste while typing) and the panel-level paste handler (paste while the
- * caret is elsewhere). All images in the queue are submitted together with
- * the next line of text, so the user can intersperse screenshots between
- * typed notes. */
-class PendingImages {
-  items = $state<string[]>([]);
-
-  push(dataUrl: string) {
-    this.items = [...this.items, dataUrl];
-  }
-
-  remove(index: number) {
-    this.items = this.items.filter((_, i) => i !== index);
-  }
-
-  clear() {
-    this.items = [];
-  }
-}
-
-export const pendingImages = new PendingImages();
-
 /** Outcome of a guarded call.
  *
  * Tagged rather than `T | undefined`: half the commands return nothing, so a
@@ -169,22 +146,26 @@ class WorkspaceState {
   /** Reports whether the line landed, so the composer can keep the text on the
    * screen instead of swallowing it when the write fails. */
   async addItem(text: string, images?: string[]): Promise<boolean> {
-    const card = this.active;
+    const cardId = this.activeId;
     const value = text.trim();
     const hasImages = images && images.length > 0;
-    if (!card || (!value && !hasImages)) return false;
+    if (!cardId || (!value && !hasImages)) return false;
+
     const res = await guard(
-      () => ipc.addItem(card.id, value || undefined, images),
+      () => ipc.addItem(cardId, value || undefined, images),
       '记录失败',
     );
-    if (res.ok) {
-      // Images arrive back as data URLs (the Rust side saved them to disk and
-      // the store layer converted the paths for display).
-      const item = res.value;
-      if (images && images.length > 0) item.images = images;
-      card.items.push(item);
-    }
-    return res.ok;
+    if (!res.ok) return false;
+
+    // Re-find the card after the await: `this.cards` may have been replaced
+    // by a concurrent `load()` (e.g. workspace-changed event from tray), so
+    // the $derived snapshot captured before the await would point at a stale
+    // object that is no longer in the active `cards` array.
+    const item = res.value;
+    if (images && images.length > 0) item.images = images;
+    const card = this.cards.find(c => c.id === cardId);
+    if (card) card.items.push(item);
+    return true;
   }
 
   async toggleItem(item: Item) {

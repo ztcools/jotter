@@ -19,8 +19,7 @@
   import Toolbar from './components/Toolbar.svelte';
   import { pressToDrag } from './lib/drag';
   import * as ipc from './lib/ipc';
-  import { pendingImages, workspace } from './lib/store.svelte';
-  import { readImagesFromClipboard } from './lib/paste';
+  import { workspace } from './lib/store.svelte';
 
   let menuOpen = $state(false);
 
@@ -93,23 +92,12 @@
   function onContextMenu(event: MouseEvent) {
     if (!(event.target as HTMLElement).closest('input, textarea')) event.preventDefault();
   }
-
-  /** When an image is pasted anywhere on the panel outside of a text field,
-   * queue every image alongside any already waiting in the composer — the
-   * user can then type text and press Enter to submit everything at once. */
-  async function onPaste(event: ClipboardEvent) {
-    const target = event.target as HTMLElement;
-    if (target.closest('input, textarea')) return;
-    const urls = await readImagesFromClipboard(event);
-    for (const u of urls) pendingImages.push(u);
-  }
 </script>
 
 <svelte:window
   onkeydown={onKeydown}
   oncontextmenu={onContextMenu}
   onpointerdown={onWindowPointerDown}
-  onpaste={onPaste}
 />
 
 <div class="stage">

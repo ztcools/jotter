@@ -4,11 +4,13 @@
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import Icon from './Icon.svelte';
-  import { pendingImages, workspace } from '../lib/store.svelte';
-  import { readImagesFromClipboard } from '../lib/paste';
+  import { workspace } from '../lib/store.svelte';
 
   let value = $state('');
   let field = $state<HTMLInputElement | null>(null);
+  /** Images queued for the next submission — local state so reactivity stays
+   * within this component and never crosses module boundaries. */
+  let pending = $state<string[]>([]);
 
   /** True while the caret is in some other field — an item being corrected. */
   function editingElsewhere() {
@@ -48,26 +50,25 @@
     field?.focus();
   });
 
-  // When the active card changes, discard any images queued for a different
-  // card — they would otherwise land on the wrong one.
+  // Discard pending images when the active card changes — they belong to the
+  // card they were pasted on.  (Local $state resets naturally when this
+  // component re-runs, so the assignment is deliberate and not a leak.)
   $effect(() => {
     void activeId;
-    pendingImages.clear();
+    pending = [];
   });
 
   async function submit() {
     const text = value.trim();
-    const imgs = pendingImages.items.length > 0 ? pendingImages.items : undefined;
+    const imgs = pending.length > 0 ? [...pending] : undefined;
     if (!text && !imgs) return;
-    // Cleared up front so the next line can be typed straight away, and put
-    // back if the write failed — losing a just-typed note is the one failure
-    // this app cannot afford.
+    // Snapshot captured; clear UI state before the await so the user can
+    // start typing the next line immediately.
     value = '';
-    pendingImages.clear();
+    pending = [];
     if (!(await workspace.addItem(text, imgs))) {
       value = text;
-      // Restoring data URLs on failure would risk writing the same bytes to
-      // disk again on the next attempt, so the queue stays empty.
+      pending = imgs ?? [];
     }
   }
 
@@ -78,12 +79,23 @@
     }
   }
 
-  /** Image paste inside the composer: every image in the paste goes into the
-   * pending queue so the user can type more text before and after them. Only
-   * Enter (or the + button) submits. */
+  /** Reads every image from the paste event into the local pending queue. */
   async function onPaste(event: ClipboardEvent) {
-    const urls = await readImagesFromClipboard(event);
-    for (const u of urls) pendingImages.push(u);
+    const dt = event.clipboardData;
+    if (!dt) return;
+    for (let i = 0; i < dt.items.length; i++) {
+      const item = dt.items[i];
+      if (!item || !item.type.startsWith('image/')) continue;
+      event.preventDefault();
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+      pending = [...pending, dataUrl];
+    }
   }
 </script>
 
@@ -91,14 +103,14 @@
      also leave the caret ready, not on `body`. -->
 <svelte:window onfocus={claimCaret} />
 
-{#if pendingImages.items.length > 0}
+{#if pending.length > 0}
   <div class="queue">
-    {#each pendingImages.items as src, index (src)}
+    {#each pending as src, index (src)}
       <div class="chip">
         <img {src} alt="待提交截图" />
         <button
           class="drop"
-          onclick={() => pendingImages.remove(index)}
+          onclick={() => (pending = pending.filter((_, j) => j !== index))}
           title="移除此图片"
           aria-label="移除此图片"
         >
@@ -120,7 +132,7 @@
     placeholder="记一个问题…"
     aria-label="记一个问题"
   />
-  <button onclick={submit} disabled={value.trim().length === 0 && pendingImages.items.length === 0} title="添加（Enter）" aria-label="添加">
+  <button onclick={submit} disabled={value.trim().length === 0 && pending.length === 0} title="添加（Enter）" aria-label="添加">
     <Icon name="plus" size={14} />
   </button>
 </div>
