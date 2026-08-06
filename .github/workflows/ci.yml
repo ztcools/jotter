@@ -94,6 +94,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Tauri's beforeBuildCommand (pnpm build) normally covers this, but an
+      # explicit build here guarantees ../dist exists before cargo runs and
+      # surfaces any frontend failure with its own step name instead of
+      # burying it inside the tauri build log.
+      - name: Build frontend bundle
+        run: pnpm build
       - name: Build portable exe and NSIS installer
         run: pnpm tauri build
       - uses: actions/upload-artifact@v4
