@@ -1,6 +1,6 @@
 [package]
 name = "jotter"
-version = "0.1.0"
+version = "0.1.1"
 description = "Floating desktop scratchpad for jotting down UI and web issues"
 authors = ["ztcools"]
 license = "MIT"
