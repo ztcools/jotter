@@ -146,26 +146,20 @@ class WorkspaceState {
   /** Reports whether the line landed, so the composer can keep the text on the
    * screen instead of swallowing it when the write fails. */
   async addItem(text: string, images?: string[]): Promise<boolean> {
-    const cardId = this.activeId;
+    const card = this.active;
     const value = text.trim();
     const hasImages = images && images.length > 0;
-    if (!cardId || (!value && !hasImages)) return false;
-
+    if (!card || (!value && !hasImages)) return false;
     const res = await guard(
-      () => ipc.addItem(cardId, value || undefined, images),
+      () => ipc.addItem(card.id, value || undefined, images),
       '记录失败',
     );
-    if (!res.ok) return false;
-
-    // Re-find the card after the await: `this.cards` may have been replaced
-    // by a concurrent `load()` (e.g. workspace-changed event from tray), so
-    // the $derived snapshot captured before the await would point at a stale
-    // object that is no longer in the active `cards` array.
-    const item = res.value;
-    if (images && images.length > 0) item.images = images;
-    const card = this.cards.find(c => c.id === cardId);
-    if (card) card.items.push(item);
-    return true;
+    if (res.ok) {
+      const item = res.value;
+      if (hasImages) item.images = images!;
+      card.items.push(item);
+    }
+    return res.ok;
   }
 
   async toggleItem(item: Item) {

@@ -79,23 +79,30 @@
     }
   }
 
-  /** Reads every image from the paste event into the local pending queue. */
+  /** Reads every image from the paste event into the local pending queue.
+   *  Collects into a plain buffer first, then assigns to the $state once —
+   *  so no reactive re-render occurs while the paste event is still being
+   *  processed.  A re-render mid-paste would reconcile the input element
+   *  and drop subsequent Ctrl+V events. */
   async function onPaste(event: ClipboardEvent) {
     const dt = event.clipboardData;
     if (!dt) return;
+    const buf: string[] = [];
+    let hit = false;
     for (let i = 0; i < dt.items.length; i++) {
       const item = dt.items[i];
       if (!item || !item.type.startsWith('image/')) continue;
+      hit = true;
       event.preventDefault();
       const blob = item.getAsFile();
       if (!blob) continue;
-      const dataUrl = await new Promise<string>((resolve) => {
+      buf.push(await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
         reader.readAsDataURL(blob);
-      });
-      pending = [...pending, dataUrl];
+      }));
     }
+    if (hit) pending = [...pending, ...buf];
   }
 </script>
 
