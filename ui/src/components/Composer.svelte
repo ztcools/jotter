@@ -8,9 +8,6 @@
 
   let value = $state('');
   let field = $state<HTMLInputElement | null>(null);
-  /** Images queued for the next submission — local state so reactivity stays
-   * within this component and never crosses module boundaries. */
-  let pending = $state<string[]>([]);
 
   /** True while the caret is in some other field — an item being corrected. */
   function editingElsewhere() {
@@ -50,26 +47,14 @@
     field?.focus();
   });
 
-  // Discard pending images when the active card changes — they belong to the
-  // card they were pasted on.  (Local $state resets naturally when this
-  // component re-runs, so the assignment is deliberate and not a leak.)
-  $effect(() => {
-    void activeId;
-    pending = [];
-  });
-
   async function submit() {
     const text = value.trim();
-    const imgs = pending.length > 0 ? [...pending] : undefined;
-    if (!text && !imgs) return;
-    // Snapshot captured; clear UI state before the await so the user can
-    // start typing the next line immediately.
+    if (!text) return;
+    // Cleared up front so the next line can be typed straight away, and put
+    // back if the write failed — losing a just-typed note is the one failure
+    // this app cannot afford.
     value = '';
-    pending = [];
-    if (!(await workspace.addItem(text, imgs))) {
-      value = text;
-      pending = imgs ?? [];
-    }
+    if (!(await workspace.addItem(text))) value = text;
   }
 
   function onKeydown(event: KeyboardEvent) {
@@ -78,132 +63,27 @@
       void submit();
     }
   }
-
-  /** Reads every image from the paste event into the local pending queue.
-   *  Collects into a plain buffer first, then assigns to the $state once —
-   *  so no reactive re-render occurs while the paste event is still being
-   *  processed.  A re-render mid-paste would reconcile the input element
-   *  and drop subsequent Ctrl+V events. */
-  async function onPaste(event: ClipboardEvent) {
-    const dt = event.clipboardData;
-    if (!dt) return;
-    const buf: string[] = [];
-    let hit = false;
-    for (let i = 0; i < dt.items.length; i++) {
-      const item = dt.items[i];
-      if (!item || !item.type.startsWith('image/')) continue;
-      hit = true;
-      event.preventDefault();
-      const blob = item.getAsFile();
-      if (!blob) continue;
-      buf.push(await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      }));
-    }
-    if (hit) pending = [...pending, ...buf];
-  }
 </script>
 
 <!-- Coming back to a pinned notebook (Alt-Tab, or a click on its chrome) should
      also leave the caret ready, not on `body`. -->
 <svelte:window onfocus={claimCaret} />
 
-{#if pending.length > 0}
-  <div class="queue">
-    {#each pending as src, index (src)}
-      <div class="chip">
-        <img {src} alt="待提交截图" />
-        <button
-          class="drop"
-          onclick={() => (pending = pending.filter((_, j) => j !== index))}
-          title="移除此图片"
-          aria-label="移除此图片"
-        >
-          <Icon name="x" size={10} />
-        </button>
-      </div>
-    {/each}
-    <span class="hint">按 Enter 提交</span>
-  </div>
-{/if}
-
 <div class="composer" class:filled={value.length > 0}>
   <input
     bind:this={field}
     bind:value
     onkeydown={onKeydown}
-    onpaste={onPaste}
     maxlength="10000"
     placeholder="记一个问题…"
     aria-label="记一个问题"
   />
-  <button onclick={submit} disabled={value.trim().length === 0 && pending.length === 0} title="添加（Enter）" aria-label="添加">
+  <button onclick={submit} disabled={value.trim().length === 0} title="添加（Enter）" aria-label="添加">
     <Icon name="plus" size={14} />
   </button>
 </div>
 
 <style>
-  .queue {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: none;
-    padding: 4px 10px 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .queue::-webkit-scrollbar {
-    display: none;
-  }
-
-  .chip {
-    position: relative;
-    flex: none;
-    width: 44px;
-    height: 44px;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 1px 3px rgba(20, 20, 45, 0.18);
-  }
-
-  .chip img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .drop {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    width: 16px;
-    height: 16px;
-    padding: 0;
-    border-radius: 50%;
-    background: rgba(34, 34, 46, 0.78);
-    color: #fff;
-    opacity: 0;
-    transition: opacity var(--dur-fast) var(--ease);
-  }
-
-  .chip:hover .drop {
-    opacity: 1;
-  }
-
-  .drop:hover {
-    background: var(--danger);
-  }
-
-  .hint {
-    flex: none;
-    font-size: 10.5px;
-    color: var(--text-faint);
-    white-space: nowrap;
-  }
-
   .composer {
     display: flex;
     align-items: center;

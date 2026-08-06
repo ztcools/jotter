@@ -4,9 +4,6 @@
 export interface Item {
   id: string;
   text: string;
-  /** Data URLs for display, loaded from disk paths after workspace load.
-   *  Never persisted directly — the Rust side stores file paths instead. */
-  images: string[];
   done: boolean;
   createdAt: number;
 }

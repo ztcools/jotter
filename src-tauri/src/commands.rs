@@ -2,10 +2,13 @@ use tauri::{AppHandle, Runtime, State, WebviewWindow};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::error::{Error, Result};
-use crate::model::{Card, Item, Workspace, MAX_ITEM_LEN};
+use crate::model::{Card, Item, Workspace};
 use crate::store::Store;
 use crate::window::{self, Ui};
 
+/// Longest single jotted line we accept. Generous for a note, tight enough that
+/// a runaway paste cannot bloat the workspace document.
+const MAX_ITEM_LEN: usize = 10_000;
 const MAX_TITLE_LEN: usize = 60;
 /// Upper bound on a single export/copy payload, as a cheap abuse guard on the
 /// IPC boundary.
@@ -85,37 +88,16 @@ pub fn set_active_card(store: State<'_, Store>, card_id: String) -> Result<()> {
 // ---------------------------------------------------------------------- items
 
 #[tauri::command]
-pub fn add_item(
-    store: State<'_, Store>,
-    card_id: String,
-    text: Option<String>,
-    images: Option<Vec<String>>,
-) -> Result<Item> {
-    let text = text
-        .map(|t| clean(&t, MAX_ITEM_LEN))
-        .unwrap_or_default();
-    let has_images = images.as_ref().is_some_and(|imgs| !imgs.is_empty());
-    if text.is_empty() && !has_images {
-        return Err(Error::Invalid("item must have text or at least one image".into()));
+pub fn add_item(store: State<'_, Store>, card_id: String, text: String) -> Result<Item> {
+    let text = clean(&text, MAX_ITEM_LEN);
+    if text.is_empty() {
+        return Err(Error::Invalid("item text cannot be empty".into()));
     }
-
-    // Save images to disk before touching the workspace so a full images dir
-    // and a partial write don't get out of sync.
-    let saved = images
-        .map(|imgs| {
-            imgs.iter()
-                .map(|b64| store.save_image(b64))
-                .collect::<Result<Vec<_>>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
-
     store.write(|ws| {
         let card = ws
             .card_mut(&card_id)
             .ok_or_else(|| Error::not_found("card", &card_id))?;
-        let mut item = Item::new(text);
-        item.images = saved;
+        let item = Item::new(text);
         card.items.push(item.clone());
         card.touch();
         Ok(item)
@@ -183,38 +165,6 @@ pub fn clear_done(store: State<'_, Store>, card_id: String) -> Result<usize> {
         }
         Ok(removed)
     })
-}
-
-// --------------------------------------------------------------------- images
-
-/// Appends a pasted image to an existing item. The image is saved to disk and
-/// the returned relative path is stored in the item's `images` list.
-#[tauri::command]
-pub fn add_item_image(
-    store: State<'_, Store>,
-    card_id: String,
-    item_id: String,
-    image_data: String,
-) -> Result<String> {
-    let path = store.save_image(&image_data)?;
-    store.write(|ws| {
-        let card = ws
-            .card_mut(&card_id)
-            .ok_or_else(|| Error::not_found("card", &card_id))?;
-        let item = card
-            .item_mut(&item_id)
-            .ok_or_else(|| Error::not_found("item", &item_id))?;
-        item.images.push(path.clone());
-        card.touch();
-        Ok(())
-    })?;
-    Ok(path)
-}
-
-/// Reads image files from disk and returns them as base64 data URLs for display.
-#[tauri::command]
-pub fn get_item_images(store: State<'_, Store>, paths: Vec<String>) -> Result<Vec<String>> {
-    store.read_images_batch(&paths)
 }
 
 // ------------------------------------------------------------------- transfer
