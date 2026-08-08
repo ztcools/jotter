@@ -2,268 +2,268 @@
 
 # Jotter
 
-**悬浮在桌面上的速记挂件** — 审查前端 UI、浏览网页时，随手把发现的问题记下来。
+**A sticky-note widget that floats on your desktop** — while reviewing front-end UI or browsing pages, jot down whatever issues you find on the fly.
 
-抱着本子的小猫 · 一键复制 · 一键导出 · 多卡片切换 · 全局快捷键 · 单文件 exe
+A little cat hugging a notebook · one-click copy · one-click export · multi-card switching · global hotkey · single-file exe
 
-[**下载最新版**](https://github.com/ztcools/jotter/releases/latest) · Windows 10 20H2+ · 免费开源（MIT）
+[**Download the latest release**](https://github.com/ztcools/jotter/releases/latest) · Windows 10 20H2+ · Free & open source (MIT)
 
 </div>
 
 ---
 
-## 安装
+## Installation
 
-去 [Releases](https://github.com/ztcools/jotter/releases/latest) 拿一个，两者内容相同：
+Grab one from [Releases](https://github.com/ztcools/jotter/releases/latest) — both files are identical in content:
 
-| 文件                          | 适合                                                                   |
-| ----------------------------- | ---------------------------------------------------------------------- |
-| `Jotter_<版本>_x64-setup.exe` | 想要开始菜单快捷方式和卸载项的。装到当前用户目录，**不需要管理员权限** |
-| `Jotter-<版本>-portable.exe`  | 只想双击就用的。免安装单文件 3.7 MB，放 U 盘也行                       |
+| File                          | Best for                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `Jotter_<version>_x64-setup.exe` | If you want a Start-menu shortcut and an uninstall entry. Installs to the current user's directory, **no administrator rights needed** |
+| `Jotter-<version>-portable.exe`  | If you just want to double-click and go. Install-free single file at 3.7 MB — works from a USB stick too                       |
 
-装好后小猫出现在桌面右下角：点它一下摊开本子，敲一行按回车记一条，<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd> 随时唤起。位置拖到哪就记在哪，重启还在原处。
+Once installed, the little cat appears at the bottom-right of your desktop: click it to open the notebook, type a line and press Enter to record it, and press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd> to summon it at any time. Drag it wherever you like — it remembers its position across restarts.
 
-两件要提前说的事：
+Two things worth knowing up front:
 
-- **WebView2**：Windows 10 20H2 及以上自带，不用装。更早的系统请先装
-  [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（微软官方）。
-- **SmartScreen 会拦一次**：发布的文件没有代码签名证书（个人项目，证书按年付费），
-  Windows 会提示「未识别的应用」，点「更多信息」→「仍要运行」。介意的话可以自己构建，
-  `make windows` 在容器里交叉编译，产物与免安装版一致。
+- **WebView2**: included with Windows 10 20H2 and later, no install needed. On older systems, install
+  [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) first (official from Microsoft).
+- **SmartScreen will block it once**: the published files have no code-signing certificate (personal project, and certificates are paid per year),
+  so Windows shows an "Unknown app" prompt — click "More info" → "Run anyway". If you'd rather not, build it yourself:
+  `make windows` cross-compiles inside a container, and the output matches the portable build.
 
-卸载走系统「应用和功能」（免安装版直接删文件）。笔记不会被删，它在
-`%APPDATA%\com.ztcools.jotter\workspace.json`。
+To uninstall, use the system's "Apps & Features" (for the portable version, just delete the file). Your notes are not removed — they live in
+`%APPDATA%\com.ztcools.jotter\workspace.json`.
 
-## 它解决什么
+## What it solves
 
-看一个页面时你会连着发现七八个问题。切窗口去开记事本、开 issue、开飞书文档，注意力就断了。
+While looking at a page you'll spot seven or eight issues in a row. Switch windows to open Notepad, open an issue, open a Feishu doc — and your attention is gone.
 
-Jotter 是桌面上一只抱着本子的小猫：点它一下，旁边就摊开一个本子，敲一行按回车，记下一条；记完点"复制"，整张卡片变成 Markdown 待办清单进剪贴板，直接贴进 issue 或聊天窗。
+Jotter is a little cat holding a notebook on your desktop: click it and a notebook unfolds beside it, type a line and press Enter to record an item; when you're done, click "Copy" and the whole card becomes a Markdown todo list in your clipboard, ready to paste straight into an issue or a chat window.
 
-## 功能
+## Features
 
 |                   |                                                                                                                                                                                      |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **小猫挂件**      | 手绘二次元小猫，平时静止，在出现 / 悬停 / 开合本子 / 新条目落地时抖一下耳朵眨个眼摇摇尾巴（另有每 19–30 秒一次的自发小动作）；常驻置顶、可拖动、位置跨重启记忆；角标显示未解决条目数 |
-| **本子面板**      | 独立窗口，贴在小猫旁边，尺寸取工作区的九分之一（每轴 1/3）；柔和圆角 + 深浅色自动跟随系统                                                                                            |
-| **多卡片**        | 一张卡片对应一个页面 / 一条流程，标签条一键切换，双击重命名                                                                                                                          |
-| **条目**          | 回车录入、点圆圈勾选已解决、点文字改错字、悬停删除                                                                                                                                   |
-| **一键复制**      | 输出 GitHub 风格任务清单 `- [ ] / - [x]`，可直接粘进 issue                                                                                                                           |
-| **一键导出**      | 原生保存对话框写 `.md` / `.txt`；按住 <kbd>Shift</kbd> 导出全部卡片                                                                                                                  |
-| **跟随移动**      | 拖动小猫，本子实时跟着走；靠近屏幕边缘时改贴另一侧，不会跑到工作区外                                                                                                                 |
-| **收起策略**      | 点击面板外自动收起；需要边看边记时点图钉固定                                                                                                                                         |
-| **托盘 + 快捷键** | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd> 随时唤起/隐藏；托盘可直接新建卡片                                                                                                        |
+| **Cat widget**    | A hand-drawn anime-style cat, still most of the time; on appear / hover / opening & closing the notebook / a new entry landing, it flicks an ear, blinks, and swishes its tail (plus a spontaneous idle motion every 19–30 seconds); always-on-top, draggable, position remembered across restarts; a badge shows the number of unresolved items |
+| **Notebook panel**| A separate window, docked next to the cat, sized to one-ninth of the workspace (1/3 on each axis); soft rounded corners + light/dark theme that follows the system automatically                                                                                            |
+| **Multiple cards**| One card per page / per workflow; a tab bar switches between them with one click, double-click to rename                                                                                                                          |
+| **Entries**       | Enter to add, click the circle to mark resolved, click the text to fix a typo, hover to delete                                                                                                                                   |
+| **One-click copy**| Outputs a GitHub-style task list `- [ ] / - [x]` that you can paste directly into an issue                                                                                                                           |
+| **One-click export**| A native save dialog writes `.md` / `.txt`; hold <kbd>Shift</kbd> to export all cards                                                                                                                  |
+| **Follows movement**| Drag the cat and the notebook follows in real time; when you get near a screen edge it re-docks to the other side, and never escapes the workspace                                                                                                                 |
+| **Collapse strategy**| Auto-collapses when you click outside the panel; pin it when you need to write while looking at something else                                                                                                                               |
+| **Tray + hotkey** | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd> summons/hides it at any time; the tray can create a new card directly                                                                                                        |
 
-### 快捷键
+### Keyboard shortcuts
 
-| 按键                                                                             | 作用                                     |
-| -------------------------------------------------------------------------------- | ---------------------------------------- |
-| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd>                                      | 全局唤起 / 隐藏挂件                      |
-| <kbd>Enter</kbd>                                                                 | 提交当前输入，输入框保持聚焦，可连续录入 |
-| <kbd>Esc</kbd>                                                                   | 收起本子                                 |
-| <kbd>Ctrl</kbd>+<kbd>N</kbd>                                                     | 新建卡片                                 |
-| <kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd> | 切换到下 / 上一张卡片                    |
+| Key                                                                             | Action                                     |
+| -------------------------------------------------------------------------------- | ------------------------------------------ |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd>                                      | Globally summon / hide the widget          |
+| <kbd>Enter</kbd>                                                                 | Commit the current input; the input stays focused so you can keep typing |
+| <kbd>Esc</kbd>                                                                   | Collapse the notebook                                 |
+| <kbd>Ctrl</kbd>+<kbd>N</kbd>                                                     | New card                                 |
+| <kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd> | Switch to the next / previous card                    |
 
-## 技术栈
+## Tech stack
 
 **Tauri 2 (Rust) + Svelte 5 + TypeScript**
 
-| 决策                    | 理由                                                                                                                                                                                                                                                            |
+| Decision                 | Rationale                                                                                                                                                                                                                                                            |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tauri 而非 Electron     | 复用系统 WebView2，产物是单个 exe（数 MB 量级），内存占用约为 Electron 的十分之一。挂件是常驻进程，常驻成本就是它唯一重要的成本。                                                                                                                               |
-| 双窗口而非单窗口伸缩    | 小猫与本子各占一个窗口。单窗口要在展开时从 104px 长到面板大小，于是小猫窗口平时就顶着一大块透明矩形，把本该落到下层应用的点击全吞了；而且非 resizable 窗口的尺寸变更会被 `tao` 夹住。分成两个窗口同时解决这两件事，"卡片出现在球旁边"也就成了字面意义上的实现。 |
-| 手绘 SVG 而非下载素材   | 小猫要能对状态起反应（按下时压扁、开本子时打勾），位图或第三方 Lottie 做不到，还要背许可与体积。整只猫是一份内联 SVG + CSS keyframes，与驱动它的样式同处一个文档，这才是「猫注意到你了」而不是「换了张贴图」。                                                  |
-| Rust 主进程             | 窗口几何、托盘、全局快捷键、落盘全在原生侧，UI 线程只负责渲染。                                                                                                                                                                                                 |
-| Svelte 5 而非 React/Vue | 编译期消解框架，几乎没有运行时。两个窗口的产物合计 80 KB JS + 16 KB CSS，其中小猫窗口只占 5 KB。                                                                                                                                                                |
-| WebView 做 UI           | 柔和圆角、毛玻璃质感、过渡动画用 CSS 表达最省力，这正是需求的重点。                                                                                                                                                                                             |
-| 单 JSON 文档 + 原子写   | 数据量是 KB 级，嵌入式数据库带来的 C 依赖、迁移、连接管理都不划算。先写临时文件 → `fsync` → `rename` 覆盖，断电只会丢掉本次修改，不会得到半个文件。存取全部收敛在 [`store.rs`](src-tauri/src/store.rs)，要换后端只需改这一个文件。                              |
+| Tauri over Electron     | Reuses the system WebView2, so the artifact is a single exe (on the order of a few MB) and memory usage is about a tenth of Electron's. The widget is a resident process, so residency cost is the only cost that matters.                                                                                                                               |
+| Two windows instead of one scaling window    | The cat and the notebook each get their own window. A single window would have to grow from 104px to panel size when expanded, so the cat window would be stuck carrying a big transparent rectangle that swallows every click meant for the apps beneath it; and size changes on a non-resizable window get clamped by `tao`. Splitting into two windows solves both problems at once, and "the card appears next to the ball" becomes literally true. |
+| Hand-drawn SVG instead of downloaded assets   | The cat has to react to state (squash on press, tick when opening the notebook), which bitmaps or third-party Lottie can't do — and they'd also carry license and size baggage. The whole cat is one inline SVG + CSS keyframes, in the same document as the styles that drive it — that's "the cat noticed you", not "a swapped-in sprite sheet".                                                  |
+| Rust main process             | Window geometry, tray, global hotkey, and persistence all live on the native side; the UI thread only handles rendering.                                                                                                                                                                                                 |
+| Svelte 5 over React/Vue | Resolves the framework at compile time, leaving almost no runtime. The two windows total 80 KB JS + 16 KB CSS, of which the cat window accounts for only 5 KB.                                                                                                                                                                |
+| WebView for the UI           | Soft rounded corners, frosted-glass texture, and transition animations are cheapest to express in CSS, and that's exactly what the requirements emphasize.                                                                                                                                                                                             |
+| Single JSON document + atomic writes   | The data volume is on the KB scale, so an embedded database's C dependencies, migrations, and connection management aren't worth it. Write to a temp file → `fsync` → `rename` over the target, so a power loss only drops the current change, never leaves half a file. All reads and writes funnel through [`store.rs`](src-tauri/src/store.rs); swapping the backend means changing just that one file.                              |
 
-### 常驻成本（实测，不是估算）
+### Residency cost (measured, not estimated)
 
-挂件从开机挂到关机，所以「没人碰它的时候花多少」是它唯一重要的指标。下面的数字全部来自
-Windows 上运行真实 exe 的测量（16 逻辑核，DPI 150%，本子收起、无人操作）：
+The widget runs from boot to shutdown, so "how much it costs when nobody touches it" is the only metric that matters. All the numbers below come from
+measuring a real exe running on Windows (16 logical cores, DPI 150%, notebook collapsed, no interaction):
 
 |                  |                                                             |
 | ---------------- | ----------------------------------------------------------- |
-| exe 体积         | 3.75 MB（免安装单文件）                                     |
-| 冷启动到窗口可见 | 566–797 ms                                                  |
-| 空闲 CPU         | **3.5%** 单核（30 秒窗口）；含自发小动作                    |
-| 进程树内存       | 工作集 432 MB / 私有 219 MB，30 秒后 441 / 205 MB（不增长） |
+| exe size         | 3.75 MB (install-free single file)                                     |
+| Cold start to visible window | 566–797 ms                                                  |
+| Idle CPU         | **3.5%** of one core (30-second window); includes the spontaneous idle motion                    |
+| Process-tree memory       | Working set 432 MB / private 219 MB, after 30 seconds 441 / 205 MB (does not grow) |
 
-两点必须说清楚，否则这几个数字会被误读：
+Two things must be said plainly, or these numbers will be misread:
 
-- **内存的大头不是我们的代码。** Jotter.exe 自己是 28 MB 工作集 / 7 MB 私有，剩下的是
-  WebView2 为两个 webview 拉起的 7 个 msedgewebview2 进程——这是「用系统浏览器渲染 UI」这个
-  选择的底价。它比 Electron 省的是磁盘和分发（对方要自带一整个 Chromium），不是常驻内存。
-  只想要一个更小的常驻内存，就得放弃 CSS 做 UI，换 GPU 直绘。
-- **空闲 CPU 曾经是 46%，那是个真实缺陷，已修。** 起因是小猫在持续呼吸/眨眼/摇尾巴。
-  在**透明置顶**窗口上，动画的代价不在于画什么，而在于该窗口的图层每帧都要重新合成进桌面：
-  实测无论动一个部件还是八个，都是 25–47% 单核（逐个暂停验证过，没有哪一个动画单独负责），
-  `drop-shadow` 约 5–7 点，内层 SVG 相比可合成的根节点约 13 点，完全静止是 1%。
-  也就是说这里不存在「廉价的常驻动画」，只有「短动画」。现在每个 keyframes 都有有限迭代次数
-  并回到静止位姿，由事件或抖动过的空闲定时器触发；隐藏窗口与 `prefers-reduced-motion` 下一律不播。
-  验收脚本因此永久加了两条断言：任一文档里都不允许出现无限迭代的动画，且进程树空闲 CPU < 15%。
+- **The bulk of the memory isn't our code.** Jotter.exe itself is 28 MB working set / 7 MB private; the rest is the
+  7 msedgewebview2 processes that WebView2 spins up for the two webviews — that's the base price of the "render UI with the system browser" choice.
+  What it saves over Electron is disk and distribution (Electron bundles its own entire Chromium), not resident memory.
+  To get a smaller resident footprint you'd have to give up CSS-based UI and switch to GPU direct rendering.
+- **Idle CPU used to be 46%, and that was a real bug, now fixed.** The cause was the cat continuously breathing / blinking / swishing its tail.
+  On a **transparent, always-on-top** window, the cost of animation isn't in what you draw, but in the fact that the window's layer has to be recomposited into the desktop every frame:
+  measured — whether you animate one part or eight, it's 25–47% of one core (verified by pausing each one individually; no single animation is solely responsible),
+  `drop-shadow` is about 5–7 points, inner SVG vs. a compositable root node is about 13 points, and fully static is 1%.
+  In other words, there's no such thing as a "cheap resident animation" here — only "short animations". Now every keyframes has a finite iteration count
+  and returns to a static pose, triggered by events or a jittered idle timer; hidden windows and `prefers-reduced-motion` never play them.
+  The acceptance script therefore permanently carries two assertions: no document may contain an infinitely-iterating animation, and the process-tree idle CPU must stay below 15%.
 
-### 素材与原创性
+### Assets & originality
 
-产物里没有任何第三方美术资源，也没有内嵌字体：
+The artifact contains no third-party artwork and no embedded fonts:
 
-- **小猫**是手写的内联 SVG（[`Cat.svelte`](ui/src/components/Cat.svelte)，约 10 KB 含注释与动画），
-  逐条路径手绘，非导出、非下载、非 AI 位图。
-- **图标 / logo**（一张带勾选与两行文字的圆角便签）没有以二进制形式「创作」过：
-  [`scripts/gen-icons.mjs`](scripts/gen-icons.mjs) 里只有一份矢量定义（圆角矩形与胶囊的符号距离场），
-  由自带的 PNG / DIB-ICO 编码器渲染出全部尺寸。`make icons` 可字节级复现仓库里的 6 个图标文件，CI 会校验这一点。
-- **字体**全部走系统字体栈（Segoe UI / 微软雅黑 / PingFang…），不下载、不打包。
-- 需要如实说明的一处：`Icon.svelte` 里 plus / x / check / dots / trash 这类几何字形，
-  是 24×24 网格上 2px 描边的常规画法，与 Feather、lucide 等 MIT/ISC 图标集画出来必然形似——
-  它们是各自独立写成的，但「原创」在这类通用符号上本就没有多少空间可主张。
-- 代码依赖（Tauri、Svelte、515 个 Rust crate）是各自的开源许可（MIT / Apache-2.0 等），
-  本仓库的 MIT 只覆盖本仓库自己的代码与美术。
+- The **cat** is a hand-written inline SVG ([`Cat.svelte`](ui/src/components/Cat.svelte), about 10 KB including comments and animation),
+  each path drawn by hand — not exported, not downloaded, not an AI bitmap.
+- The **icon / logo** (a rounded note with a checkmark and two lines of text) was never "authored" as binary:
+  [`scripts/gen-icons.mjs`](scripts/gen-icons.mjs) holds a single vector definition (a signed distance field of the rounded rectangle and capsule),
+  and the bundled PNG / DIB-ICO encoders render all sizes from it. `make icons` can byte-for-byte reproduce the 6 icon files in the repo, and CI verifies that.
+- **Fonts** all use the system font stack (Segoe UI / Microsoft YaHei / PingFang…), nothing is downloaded or bundled.
+- One honest disclosure: geometric glyphs like plus / x / check / dots / trash in `Icon.svelte`
+  are the conventional 2px-stroke drawings on a 24×24 grid, so they're bound to look similar to what Feather, lucide, and other MIT/ISC icon sets produce —
+  they were each written independently, but there's only so much room to claim "originality" for such generic symbols.
+- Code dependencies (Tauri, Svelte, 515 Rust crates) are each under their own open-source license (MIT / Apache-2.0, etc.),
+  and this repo's MIT covers only this repo's own code and artwork.
 
-### 架构
+### Architecture
 
 ```
 src-tauri/src/
-├── model.rs      持久化数据结构 + 不变量（至少一张卡片、activeId 必然有效）
-├── store.rs      唯一的磁盘出入口：原子写、损坏文件隔离而非丢弃
-├── window.rs     两个窗口的全部几何与可见性：贴靠、跟随、边界收拢、位置记忆
-├── commands.rs   IPC 边界：入参清洗 + 长度上限
-├── tray.rs       托盘图标与菜单
-└── lib.rs        装配：插件、事件、命令注册
+├── model.rs      Persistent data structures + invariants (at least one card, activeId always valid)
+├── store.rs      The only entry/exit point for disk: atomic writes, isolating corrupt files rather than discarding them
+├── window.rs     All geometry and visibility for the two windows: docking, following, boundary clamping, position memory
+├── commands.rs   The IPC boundary: input sanitization + length limits
+├── tray.rs       Tray icon and menu
+└── lib.rs        Assembly: plugins, events, command registration
 
 ui/
-├── index.html + src/ball.ts    小猫窗口
-├── panel.html + src/panel.ts   本子窗口
+├── index.html + src/ball.ts    The cat window
+├── panel.html + src/panel.ts   The notebook window
 └── src/
-    ├── BallApp.svelte      拖动/点击判定、角标；不引入 workspace store，只持有一个数字
-    ├── PanelApp.svelte     本子外壳：线圈书脊 + 纸面 + 页头
-    ├── components/Cat.svelte  小猫本体（内联 SVG + CSS 动画）
-    ├── lib/store.svelte.ts   UI 状态（Rust 是权威，这里是响应式镜像）
-    ├── lib/ipc.ts            类型化命令封装，其余代码不直接 invoke
-    ├── lib/errors.ts         前端未捕获异常回传 Rust，写进 Jotter.log
-    └── lib/markdown.ts       复制/导出的渲染（放前端因为需要本地时区与 locale）
+    ├── BallApp.svelte      Drag/click detection, badge; doesn't import the workspace store, only holds a single number
+    ├── PanelApp.svelte     The notebook shell: spiral binding + paper surface + page header
+    ├── components/Cat.svelte  The cat itself (inline SVG + CSS animations)
+    ├── lib/store.svelte.ts   UI state (Rust is the source of truth; this is the reactive mirror)
+    ├── lib/ipc.ts            Typed command wrappers; the rest of the code never calls invoke directly
+    ├── lib/errors.ts         Uncaught front-end exceptions are reported back to Rust and written to Jotter.log
+    └── lib/markdown.ts       Rendering for copy/export (lives on the front end because it needs the local timezone and locale)
 ```
 
-几个不显眼但影响手感的细节：
+A few details that don't stand out but make the feel right:
 
-- **窗口可见性只有一份权威** — 前端从不维护"面板是否打开"的布尔量，只调 `toggle_panel`；开合状态在 Rust，变化后由 `panel-state` 事件广播。两个窗口各自记一份，迟早会对不上。
-- **小猫不漂移** — 本子贴在小猫旁边而不是反过来；本子被工作区边界夹住时，小猫留在原处。否则在角落反复开关，小猫会一路往屏幕中间"爬"。
-- **拖动与点击不冲突** — 指针位移超过 4px 才交给系统开始拖窗口，否则算点击。直接调 `startDragging` 会让系统拖拽循环吞掉所有点击。
-- **失焦收起不会自己弹回** — 点小猫时面板先失焦收起，紧接着的点击又会要求打开。窗口事件与 IPC 之间有 320ms 的守卫窗口把这次重开吞掉。
-- **导出时面板不消失** — 原生保存对话框会抢焦点，而失焦本来要触发自动收起。导出前后用 `suspend_auto_collapse` 括起来。
-- **打开就能敲** — 本子窗口是隐藏而非销毁，所以挂载时那一次 `focus()` 落在还不可聚焦的 webview 上被拒，之后再也不会挂载第二次。光标改由 `panel-state` 打开事件取回，窗口重新获得焦点时再补一次；正在改错字时不抢。
-- **数据永不静默丢失** — JSON 解析失败时，原文件改名为 `workspace.corrupt-<时间戳>` 保留，而不是覆盖。
+- **Exactly one authority for window visibility** — the front end never keeps its own "is the panel open" boolean, it only calls `toggle_panel`; the open/close state lives in Rust and is broadcast via the `panel-state` event. If both windows kept their own copy, they'd drift out of sync sooner or later.
+- **The cat doesn't drift** — the notebook docks to the cat, not the other way around; when the notebook gets clamped by a workspace boundary, the cat stays where it is. Otherwise, opening and closing repeatedly in a corner would make the cat "crawl" toward the center of the screen.
+- **Drag and click don't conflict** — the pointer has to move more than 4px before it's handed to the system to start dragging; otherwise it counts as a click. Calling `startDragging` directly would let the system drag loop swallow every click.
+- **Blur-collapse doesn't bounce back** — clicking the cat collapses the panel on blur, but the very next click asks to open it again. A 320ms guard window between the window event and the IPC call swallows that reopen.
+- **The panel doesn't vanish during export** — the native save dialog steals focus, and losing focus would normally trigger auto-collapse. The export is wrapped in `suspend_auto_collapse`.
+- **Typeable as soon as it opens** — the notebook window is hidden rather than destroyed, so the one-time `focus()` at mount lands on a webview that isn't focusable yet and gets rejected, and it's never mounted a second time. The cursor is instead recovered via the `panel-state` open event, with one extra attempt when the window regains focus; it doesn't steal focus while you're editing a typo.
+- **Data is never silently lost** — when JSON parsing fails, the original file is renamed to `workspace.corrupt-<timestamp>` and preserved instead of being overwritten.
 
-## 构建
+## Building
 
-### 容器化交叉编译（推荐，无需 Windows 机器）
+### Containerized cross-compilation (recommended, no Windows machine needed)
 
 ```bash
 make windows          # → dist-win/Jotter.exe
 ```
 
-`cargo-xwin` 在容器内拉取 MSVC CRT 与 Windows SDK 头文件，驱动 clang-cl / lld-link 产出 MSVC 目标的 exe。产物是**免安装单文件**，拷到 Windows 上双击即可。WebView2 运行时由 Windows 10 20H2 及以后版本自带。
+`cargo-xwin` pulls the MSVC CRT and Windows SDK headers inside the container and drives clang-cl / lld-link to produce an MSVC-targeted exe. The output is an **install-free single file** — copy it to Windows and double-click. The WebView2 runtime ships with Windows 10 20H2 and later.
 
-### 在 Windows 上原生构建（额外产出 NSIS 安装包）
+### Native build on Windows (additionally produces an NSIS installer)
 
-需要 Rust 工具链与 MSVC Build Tools：
+You need a Rust toolchain and MSVC Build Tools:
 
 ```powershell
 pnpm install
 pnpm tauri build       # → src-tauri/target/release/{jotter.exe, bundle/nsis/*.exe}
 ```
 
-### 开发
+### Development
 
 ```bash
-make check            # 前端类型检查
-make lint             # cargo fmt --check + clippy -D warnings（需要本地 Rust）
-make lint-docker      # 同上，但在构建容器里跑，本机无需装 Rust
-make fmt-docker       # 在容器里格式化 Rust 源码
-make icons            # 从 scripts/gen-icons.mjs 重新生成全部图标
-make dev              # 热重载（需要本地 WebView 与 Rust 工具链）
+make check            # front-end type check
+make lint             # cargo fmt --check + clippy -D warnings (needs local Rust)
+make lint-docker      # same, but run in the build container — no local Rust needed
+make fmt-docker       # format the Rust sources inside the container
+make icons            # regenerate all icons from scripts/gen-icons.mjs
+make dev              # hot reload (needs a local WebView and Rust toolchain)
 ```
 
-> `make dev` 在 WSL 内需要 `webkit2gtk-4.1` 等 GTK 依赖；仅做 Windows 交付时不必安装，
-> 用 `make windows` + `make lint-docker` 即可，二者共用同一个镜像。
+> `make dev` inside WSL requires GTK dependencies like `webkit2gtk-4.1`; you don't need to install them if you're only shipping for Windows —
+> just use `make windows` + `make lint-docker`, since both share the same image.
 
-改 CSS 时不必起 Rust 侧：`ui/preview.html` 用桩掉的 IPC 层跑真实组件，浏览器直接打开
-`http://localhost:1420/preview.html?state=panel`（`state=ball` 看小猫），窗口尺寸与 Rust 给的一致，
-可直接截图比对。
+When changing CSS you don't need to touch the Rust side: `ui/preview.html` runs the real components against a stubbed IPC layer. Open
+`http://localhost:1420/preview.html?state=panel` directly in a browser (`state=ball` to see the cat); the window size matches what Rust uses,
+so you can screenshot and compare directly.
 
-### 验收
+### Acceptance
 
-`cargo build`、clippy、svelte-check 全绿的产物，照样可能是一个开着
-`ERR_CONNECTION_REFUSED` 的窗口——它们都不运行这个 exe。
-[`scripts/acceptance.ps1`](scripts/acceptance.ps1) 运行它，并独立核验：
+An artifact where `cargo build`, clippy, and svelte-check all pass can still be a window sitting open on
+`ERR_CONNECTION_REFUSED` — none of them actually run the exe.
+[`scripts/acceptance.ps1`](scripts/acceptance.ps1) runs it and independently verifies:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\acceptance.ps1 -Exe .\Jotter.exe
 ```
 
-| 手段                                | 断言                                                                                                                                 |
+| Method                                | Assertion                                                                                                                                 |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| CDP（`--remote-debugging-port`）    | 两个 webview 都加载自内嵌 bundle（`tauri.localhost`）、都挂载出了内容、都没有前端异常                                                |
-| Win32 `EnumWindows` + DPI 感知      | 小猫窗口是 104 逻辑像素、本子是工作区每轴 1/3（面积 1/9）、置顶、透明、不越界                                                        |
-| CDP `Input.dispatchMouseEvent`      | 真实指针按下/抬起（而非 `.click()`，那会绕过点击与拖动的判定）→ 本子在旁边打开、光标落在录入行（首开与重开各断言一次）、再点一次收起 |
-| `SetWindowPos` + workspace.json     | 移动小猫，本子跟随；新位置落盘                                                                                                       |
-| 跨窗口事件                          | 在本子里加一条，小猫角标随之变化（store hook → 事件 → 另一个 webview 的 DOM），随后自动清理                                          |
-| 屏幕截取像素差                      | 遮/显同一矩形对比：透明置顶窗口即使什么都没画，对所有 API 也仍然"健康"                                                               |
-| `getAnimations()` + 进程树 CPU 时间 | 两个文档都没有无限迭代的动画，且空闲 CPU 低于预算——上面那个 46% 的缺陷通过了其余所有断言                                             |
+| CDP (`--remote-debugging-port`)    | Both webviews load from the embedded bundle (`tauri.localhost`), both mount content, and neither has front-end exceptions                                                        |
+| Win32 `EnumWindows` + DPI awareness      | The cat window is 104 logical pixels, the notebook is 1/3 of the workspace on each axis (1/9 of the area), always-on-top, transparent, and within bounds                                                        |
+| CDP `Input.dispatchMouseEvent`      | A real pointer down/up (not `.click()`, which would bypass click and drag detection) → the notebook opens beside it, the cursor lands in the input line (asserted once for first open and once for reopen), and a further click collapses it |
+| `SetWindowPos` + workspace.json     | Move the cat and the notebook follows; the new position is persisted                                                                                                       |
+| Cross-window events                          | Add an entry in the notebook and the cat's badge updates accordingly (store hook → event → the other webview's DOM), then it's cleaned up automatically                                          |
+| Screenshot pixel diff                      | Cover and reveal the same rectangle to compare: a transparent always-on-top window still looks "healthy" to every API even when it draws nothing                                                               |
+| `getAnimations()` + process-tree CPU time | Neither document has an infinitely-iterating animation, and idle CPU stays under budget — the 46% bug above passes every other assertion                                             |
 
-空闲 CPU 不看绝对值，而是和「同一进程把所有动画停掉」的地板做差——绝对值量的是那台机器忙不
-忙，差值才是小猫自己动的代价。
+Idle CPU isn't judged on its absolute value, but as a difference against the floor of "the same process with all animations stopped" — the absolute value measures how busy that machine is;
+the difference is the actual cost of the cat moving itself.
 
-**这张表整张只在桌面上跑得全**，因此发布前请在本机跑一次完整验收。CI 里加的是
-`-SkipPixel -SkipCpu -NoDevtools`，能问的比看上去少：runner 没有桌面可截；共享两核上的
-「单核百分比」量的是邻居；而 GitHub `windows-latest` 的作业以管理员身份运行，那里的 WebView2
-加载器会把 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 整条丢掉——浏览器进程只带着 app 自己的
-`AdditionalBrowserArguments` 起来，调试端口从来没有人监听（在 runner 上实测：没有任何 Edge
-策略参与，同一个 CI 产物在普通桌面上照样认这个变量）。把调试端口写进出厂配置换取 CI 绿灯，
-不是一笔该做的交易。所以 CI 只断言 runner 能诚实回答的部分：exe 起得来、两个窗口都在且几何
-正确、置顶、本子默认藏着、日志里没有 ERROR；跑完会把每一条**没能**断言的检查按名字打印出来，
-绿灯不会被误读成「全测过了」。
+**This whole table only runs fully on a desktop**, so run a complete acceptance pass on your own machine before releasing. CI runs
+`-SkipPixel -SkipCpu -NoDevtools`, and it can honestly answer less than it looks like: runners have no desktop to capture; on a shared two-core box,
+a "single-core percentage" measures your neighbor; and GitHub `windows-latest` jobs run as administrator, where the WebView2
+loader drops `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` entirely — the browser process starts with only the app's own
+`AdditionalBrowserArguments`, so the debug port never has anyone listening (verified on a runner: no Edge
+policy involved, yet the same CI artifact on a normal desktop still honors that variable). Baking the debug port into the shipped config in exchange for a green CI
+is not a trade worth making. So CI only asserts what the runner can honestly answer: the exe starts, both windows exist with correct geometry,
+always-on-top, the notebook is hidden by default, and there are no ERRORs in the log; when it finishes it prints out every check it **couldn't**
+assert by name, so a green light can't be misread as "everything was tested".
 
-本地跑请让桌面闲着：它驱动的就是你眼前那只小猫——一次真实点击会把本子收起，一次真实拖动会把
-小猫挪走，后面每条开合断言都跟着翻转。而且不必真按下去：CDP 合成的按下带的是
-`screenX/screenY = 0`，此时哪怕只是**移动**一下真实指针，拖动阈值也会看到上千像素的跳变。
+For local runs, keep the desktop idle: it's literally driving the cat in front of you — a real click will collapse the notebook, a real drag will
+move the cat away, and every open/close assertion after that will flip. And you don't even need to press down for real: CDP-synthesized presses carry
+`screenX/screenY = 0`, so merely **moving** the real pointer at all makes the drag threshold see a jump of a thousand pixels.
 
-脚本因此把指针停到离挂件最远的角上，并用 `ClipCursor` 圈在那个 3×3 的方框里（前台窗口一变化
-围栏就失效，所以每次采样都重新围一次）；每个合成动作前后各采一次样，被挪动就按名字报出来——
-「指针在 (1785,1025)，不在停靠点，发生在：本子打开时拖动小猫之前」。于是「这条断言没测准」
-是有证据的，而两次干净采样之间失败的那条，才是真的回归。结尾仍会汇总这次跑被碰过几次；跑完
-指针会还给你（脚本异常退出也会解围栏）。
+The script therefore parks the pointer in the corner farthest from the widget and fences it in a 3×3 box with `ClipCursor` (the fence
+expires the moment the foreground window changes, so it's re-fenced before every sample); it samples once before and after each synthesized action, and if the pointer was moved,
+it reports it by name — "pointer at (1785,1025), not at the dock, happened: before dragging the cat while the notebook was open". So "this assertion wasn't measured properly"
+has evidence, and the assertion that fails between two clean samples is the real regression. It still tallies how many times the run was touched; when it finishes
+the pointer is returned to you (an abnormal exit unfences it too).
 
-图标不是二进制资产：`scripts/gen-icons.mjs` 用带符号距离场把矢量定义渲染成全套 PNG 与 DIB 格式 ICO，因此改一处定义即可重出所有尺寸，CI 也会校验图标与生成器一致。
+Icons aren't binary assets: `scripts/gen-icons.mjs` uses a signed distance field to render the vector definition into the full set of PNGs and DIB-format ICOs, so changing one definition regenerates every size, and CI also verifies that the icons match the generator.
 
-### 发布
+### Release
 
-打一个 `v*` 标签就够了：
+A single `v*` tag is enough:
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-[CI](.github/workflows/ci.yml) 会在 Windows runner 上构建安装包与免安装 exe，
-**先跑一遍验收里 runner 能跑的部分**（`-NoDevtools`，见上），然后才用 `gh release create`
-把两个文件挂到该标签的 Release 上——所以不存在"发出去了但没人启动过"的产物；
-需要真实指针与像素的那几条，在打标签前由本机的完整验收兜住。版本号取自 `package.json` / `tauri.conf.json` /
-`Cargo.toml`，三处要一致。
+[CI](.github/workflows/ci.yml) builds the installer and the install-free exe on a Windows runner,
+**first runs the part of the acceptance suite the runner can run** (`-NoDevtools`, see above), and only then uses `gh release create`
+to attach both files to that tag's Release — so there's never an artifact that was "shipped but never launched";
+the checks that need a real pointer and real pixels are covered by the full local acceptance run before tagging. The version number is read from `package.json` / `tauri.conf.json` /
+`Cargo.toml`, and all three must agree.
 
-## 数据存放
+## Data storage
 
 ```
 %APPDATA%\com.ztcools.jotter\workspace.json
 ```
 
-纯文本 JSON，可直接备份、diff 或手改。字段见 [`model.rs`](src-tauri/src/model.rs)。
+Plain-text JSON — you can back it up, diff it, or edit it by hand. Fields are documented in [`model.rs`](src-tauri/src/model.rs).
 
-日志（含前端回传的未捕获异常）：
+Logs (including uncaught exceptions reported from the front end):
 
 ```
 %LOCALAPPDATA%\com.ztcools.jotter\logs\Jotter.log
 ```
 
-## 许可
+## License
 
 MIT
